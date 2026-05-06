@@ -1,29 +1,53 @@
 {
   "expo": {
-    "name": "naptune",
+    "name": "Naptune",
     "slug": "naptune",
+    "scheme": "naptune",
     "version": "1.0.0",
+    "runtimeVersion": "0.9.0",
     "orientation": "portrait",
+    "userInterfaceStyle": "dark",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
-    "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#07091c"
     },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
-      "supportsTablet": true
+      "bundleIdentifier": "com.naptune.app",
+      "buildNumber": "86",
+      "supportsTablet": false,
+      "infoPlist": {
+        "CFBundleDisplayName": "Naptune",
+        "CFBundleDevelopmentRegion": "ko",
+        "NSUserTrackingUsageDescription": "This is used to provide a better experience.",
+        "UIBackgroundModes": [
+          "fetch",
+          "remote-notification"
+        ]
+      },
+      "config": {
+        "usesNonExemptEncryption": false
+      }
     },
     "android": {
+      "package": "com.naptune.app",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
-      },
-      "edgeToEdgeEnabled": true
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#07091c"
+      }
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    }
+    "plugins": [
+      "expo-localization"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "389dfafc-b202-46fe-a5b2-4d96704c8024"
+      }
+    },
+    "owner": "iiwonkim"
   }
 }
