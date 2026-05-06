@@ -62,6 +62,51 @@ export const getWWRange = (days) => {
   return { min: 315, max: 360 };
 };
 
+// ═══ Catnap (last nap of multi-nap day) max length by months ═══
+// Sources: Weissbluth, Cara Babies (bridge nap 30-45min @6-12mo), Wee Bee Dreaming
+export const catnapMaxByMonths = (months) => {
+  if (months <= 4) return 45;
+  if (months <= 6) return 40;
+  if (months <= 9) return 35;
+  if (months <= 11) return 30;
+  if (months <= 12) return 20;
+  return 0; // 13mo+: catnap dropped
+};
+
+// ═══ Last-nap recommendation (static, age + time-to-bed only) ═══
+// Returns { skip, ideal, max, min } in minutes.
+//   skip: if too close to bedtime, recommend skipping this nap
+//   min/max/ideal: bracket for safe last-nap duration
+export const getLastNapRec = (days, timeToBedMin) => {
+  const months = Math.floor((days || 0) / 30);
+  const catMax = catnapMaxByMonths(months);
+  if (catMax === 0) return { skip: false, ideal: 60, max: 90, min: 30 };
+  if (timeToBedMin < 90) return { skip: true, ideal: 0, max: 0, min: 0 };
+  if (timeToBedMin > 240) return { skip: false, ideal: catMax, max: catMax, min: 20 };
+  return {
+    skip: false,
+    ideal: Math.min(catMax, Math.max(20, Math.floor((timeToBedMin - 90) / 2))),
+    max: catMax,
+    min: 20
+  };
+};
+
+// ═══ Per-nap hard cap (protect night sleep) — Weissbluth/Cara consensus ═══
+export const getPerNapCap = (days) => {
+  if (days < 360) return 120;       // <12mo: 2h
+  if (days < 540) return 150;       // 12-18mo: 2.5h (or 2h if 2 naps still)
+  return 180;                        // 18mo+: 3h
+};
+
+// ═══ Late-nap cutoff (protect bedtime) — by age ═══
+export const getLateNapCutoffMin = (days) => {
+  if (days < 180) return 17 * 60;          // 4-6mo: 17:00
+  if (days < 240) return 16 * 60 + 30;     // 6-8mo: 16:30
+  if (days < 360) return 16 * 60;          // 8-12mo: 16:00
+  if (days < 540) return 15 * 60 + 30;     // 12-18mo: 15:30
+  return 15 * 60;                           // 18mo+: 15:00
+};
+
 // ═══ Wee Bee Dreaming 기반 rescue nap 기준 ═══
 // 월령별: 정상 낮잠 cutoff, rescue nap window, rescue 실패 시 취침 시각
 // 기준: https://www.weebeedreaming.com/my-blog/early-bedtime-vs-late-nap

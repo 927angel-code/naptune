@@ -142,6 +142,24 @@ function AnalysisScreenInner() {
   var slotLabels = [t('analysis.morning'),t('analysis.midday'),t('analysis.afternoon')];
   var slotKeys = ['morning','midday','afternoon'];
 
+  // ═══ 깨시 적중률 (5to15만 카운트) ═══
+  // 이번주 / 지난주 비교 — 5-15분 sweet spot 비율 추세
+  var thisWeekEase = weekSleep.filter(function(l){return l.ease && !l.micro;});
+  var thisWeekHit = thisWeekEase.filter(function(l){return l.ease === '5to15';}).length;
+  var thisWeekHitPct = thisWeekEase.length > 0 ? Math.round(thisWeekHit / thisWeekEase.length * 100) : null;
+  var prevWeekEase = prevWeek.filter(function(l){return l.ease && !l.micro;});
+  var prevWeekHit = prevWeekEase.filter(function(l){return l.ease === '5to15';}).length;
+  var prevWeekHitPct = prevWeekEase.length > 0 ? Math.round(prevWeekHit / prevWeekEase.length * 100) : null;
+  var hitTier = function(p) {
+    if (p === null) return { color: 'rgba(200,215,255,0.4)', label: lang==='ko'?'데이터 부족':'no data' };
+    if (p >= 60) return { color: '#34d399', label: lang==='ko'?'아주 잘 잡혀요':'excellent' };
+    if (p >= 45) return { color: '#34d399', label: lang==='ko'?'좋아요':'good' };
+    if (p >= 30) return { color: '#f0cd8a', label: lang==='ko'?'보통':'ok' };
+    if (p >= 20) return { color: '#fb923c', label: lang==='ko'?'WW 재검토':'review WW' };
+    return { color: '#f87171', label: lang==='ko'?'크게 어긋남':'off track' };
+  };
+  var thisTier = hitTier(thisWeekHitPct);
+
   return (
     <ScrollView showsVerticalScrollIndicator={false}>
 
@@ -273,6 +291,35 @@ function AnalysisScreenInner() {
           </View>
         );
       })()}
+
+      {/* ═══ 깨시 적중률 (5to15분) ═══ */}
+      {thisWeekHitPct !== null && thisWeekEase.length >= 3 && <View style={s.card}>
+        <Text style={s.sectionTitle}>{lang==='ko'?'🎯 깨시 적중률':'🎯 Wake window accuracy'}</Text>
+        <Text style={{color:'rgba(200,215,255,0.45)',fontSize:13,lineHeight:20,textAlign:'center',marginBottom:14}}>
+          {lang==='ko'?'잠드는데 5~15분 걸린 비율 (sweet spot)':'% of sleeps with 5-15 min onset (sweet spot)'}
+        </Text>
+        <View style={{flexDirection:'row',gap:10,marginBottom:10}}>
+          <View style={[s.statBox,{backgroundColor:thisTier.color+'15',borderWidth:1,borderColor:thisTier.color+'30'}]}>
+            <Text style={{color:'rgba(200,215,255,0.5)',fontSize:13,marginBottom:2}}>{lang==='ko'?'이번주':'This week'}</Text>
+            <Text style={[s.statValue,{color:thisTier.color}]}>{thisWeekHitPct+'%'}</Text>
+            <Text style={{color:thisTier.color,fontSize:13,fontWeight:'700',marginTop:2}}>{thisTier.label}</Text>
+            <Text style={{color:'rgba(200,215,255,0.35)',fontSize:11,marginTop:2}}>{thisWeekHit+'/'+thisWeekEase.length}</Text>
+          </View>
+          {prevWeekHitPct !== null && <View style={s.statBox}>
+            <Text style={{color:'rgba(200,215,255,0.5)',fontSize:13,marginBottom:2}}>{lang==='ko'?'지난주':'Last week'}</Text>
+            <Text style={[s.statValue,{color:'rgba(200,215,255,0.7)'}]}>{prevWeekHitPct+'%'}</Text>
+            {(function(){
+              var diff = thisWeekHitPct - prevWeekHitPct;
+              if (Math.abs(diff) < 5) return <Text style={{color:'rgba(200,215,255,0.35)',fontSize:13,marginTop:2}}>{lang==='ko'?'비슷':'≈'}</Text>;
+              return <Text style={{color:diff>0?'#34d399':'#f87171',fontSize:13,fontWeight:'700',marginTop:2}}>{(diff>0?'+':'')+diff+'%'}</Text>;
+            })()}
+            <Text style={{color:'rgba(200,215,255,0.35)',fontSize:11,marginTop:2}}>{prevWeekHit+'/'+prevWeekEase.length}</Text>
+          </View>}
+        </View>
+        <Text style={{color:'rgba(200,215,255,0.5)',fontSize:13,lineHeight:20,textAlign:'center'}}>
+          {lang==='ko'?'5분 미만은 과피로, 15분 초과는 깨시가 어긋난 신호예요':'Under 5min = overtired, over 15min = WW miss'}
+        </Text>
+      </View>}
 
       {/* ═══ Weekly report ═══ */}
       {daysWithData.length>=2 && <View style={s.card}>

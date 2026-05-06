@@ -18,7 +18,7 @@
     ],
     "ios": {
       "bundleIdentifier": "com.naptune.app",
-      "buildNumber": "86",
+      "buildNumber": "87",
       "supportsTablet": false,
       "infoPlist": {
         "CFBundleDisplayName": "Naptune",

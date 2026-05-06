@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput, Keyboa
 import { useApp } from '../context/AppContext';
 import { useLang } from '../context/LangContext';
 import { gD, fD, fT, fM, uid } from '../utils/helpers';
-import { isNightSleep, getWWRange } from '../utils/sleep';
+import { isNightSleep, getWWRange, gP, getPerNapCap, getLastNapRec, getLateNapCutoffMin } from '../utils/sleep';
 import { COLORS } from '../utils/constants';
 import { SV, LD } from '../utils/storage';
 import ScheduleArc from '../components/ScheduleArc';
@@ -175,14 +175,6 @@ export default function HomeScreen() {
     );
   }
 
-  // ═══ Status line: awake / sleeping duration ═══
-  var statusLine = null;
-  if (asleep && sS) {
-    statusLine = (lang === 'ko' ? '💤 자는 중 ' : '💤 Sleeping ') + fD(el);
-  } else if (lW) {
-    statusLine = (lang === 'ko' ? '☀️ 깨어있는 시간 ' : '☀️ Awake ') + fD(awMs);
-  }
-
   // ═══ Wake window range (Huckleberry, by month) ═══
   var days = bday ? gD(bday) : 0;
   var wwRange = days ? getWWRange(days) : null;
@@ -197,7 +189,8 @@ export default function HomeScreen() {
   }).sort(function(a,b){return b.end - a.end;})[0];
   var arcWakeTs = morningWake ? morningWake.end :
     ((lW && lW >= todayMs && lW <= todayMs + 12*3600000) ? lW : todayMs + 7*3600000);
-  var arcBedTs = todayMs + (bH * 60 + bM2) * 60000;
+  var bedMin = bH * 60 + bM2;
+  var arcBedTs = todayMs + bedMin * 60000;
   if (arcBedTs <= arcWakeTs) arcBedTs = arcWakeTs + 12 * 3600000;
   var todayNapsForArc = sl.filter(function(l){
     return l.end && l.start >= todayMs && !isNightSleep(l) && !l.micro;
@@ -212,6 +205,167 @@ export default function HomeScreen() {
       lastNap: i === todayNapsForArc.length - 1 && dur < 50
     };
   });
+
+  // ═══ Static counters for coach (no prediction) ═══
+  var prof = days ? gP(days) : null;
+  var nowDate = new Date();
+  var nowHour = nowDate.getHours();
+  var nowMinute = nowDate.getMinutes();
+  var nowMin = nowHour * 60 + nowMinute;
+  var isNightHour = nowHour >= 20 || nowHour < 6;
+  var todayNaps = todayNapsForArc;
+  var napsDoneToday = todayNaps.length;
+  var totDayNapMs = todayNaps.reduce(function(a,n){return a + (n.end - n.start);}, 0);
+  var maxDayNapMs = prof ? prof.maxDay * 60000 : Infinity;
+  var oversleptDay = totDayNapMs > maxDayNapMs;
+  var nearMaxDay = totDayNapMs > maxDayNapMs * 0.9;
+  var napBudgetLeft = Math.max(0, Math.floor((maxDayNapMs - totDayNapMs) / 60000));
+  var napsLeft = prof ? Math.max(0, prof.n - napsDoneToday) : 0;
+  var currentNapNum = napsDoneToday + 1;
+  var headingToBed = napsLeft === 0;
+  var minToBed = Math.floor((arcBedTs - Date.now()) / 60000);
+
+  // 직전 sleep — 현재 wake window를 야기한 sleep
+  var precedesCurrentWW = function(l) { return lW ? Math.abs(l.end - lW) < 60*60000 : true; };
+  var lastSleep = sl.slice().sort(function(a,b){return b.start - a.start;}).find(function(l){
+    return l.end && !isNightSleep(l) && !l.micro && precedesCurrentWW(l);
+  });
+  var lastNapDur = lastSleep ? Math.round((lastSleep.end - lastSleep.start) / 60000) : 0;
+  var lastNapWasShort = lastNapDur > 0 && lastNapDur < 40;
+
+  // ═══ COACH ENGINE (정적 규칙만, 예측 없음) ═══
+  var coach = null;
+  if (prof && !asleep) {
+    if (isNightHour) {
+      // 밤시간 깸 (수면교육 중이거나 일반)
+      var isEarlyMorning = nowHour >= 5 && nowHour < 6;
+      if (awMin < 5) coach = {c:'#9a8cf0',icon:'🌙',t:t('home.coach.wokeAtNight'),sub:t('home.nightCoach.babyWoke')};
+      else if (awMin < 15) coach = {c:'#9a8cf0',icon:'🌙',t:t('home.coach.awakeMin',{min:awMin}),sub:t('home.nightCoach.quietFeed')};
+      else if (awMin < 30) coach = {c:'#9a8cf0',icon:'🌙',t:isEarlyMorning?t('home.coach.earlyMorning',{min:awMin}):t('home.coach.awakeMinLong',{min:awMin}),sub:isEarlyMorning?t('home.nightCoach.earlyDawnDesc'):t('home.nightCoach.layDown')};
+      else if (awMin < 60) coach = {c:'#9a8cf0',icon:'🌙',t:t('home.coach.awakeMinLong',{min:awMin}),sub:isEarlyMorning?t('home.nightCoach.earlyDawnLong'):t('home.nightCoach.checkTeeth')};
+      else if (awMin < 120) coach = {c:'#f87171',icon:'🌙',t:t('home.coach.awakeMin',{min:awMin}),sub:t('home.nightCoach.minimize')};
+      else coach = {c:'#f87171',icon:'🌙',t:t('home.coach.awakeMinLong',{min:awMin}),sub:t('home.nightCoach.hardNight')};
+    } else if (awMin > 120 && nowHour >= 5 && nowHour < 9) {
+      // 아침 자연 기상
+      coach = {c:'#60a5fa',icon:'☀️',t:t('home.coach.morningDetect'),sub:t('home.coach.morningDesc')};
+    } else if (headingToBed && minToBed > 0 && minToBed <= 25) {
+      // 취침 루틴 (설정 시각 25분 전부터)
+      coach = {c:'#9a8cf0',icon:'🌙',t:t('home.coach.bedRoutine'),sub:t('home.coach.bedRoutineSub')};
+    } else if (wwRange) {
+      // 깨시 범위 기반 상태 (정적)
+      if (awMin >= wwRange.max + 30) {
+        coach = {c:'#f87171',icon:'🧡',t:t('home.coach.overdue'),sub:t('home.coach.overdueDesc')};
+      } else if (awMin > wwRange.max) {
+        coach = {c:'#f0cd8a',icon:'💛',t:t('home.coach.late'),sub:t('home.coach.startRoutine')};
+      } else if (awMin >= wwRange.min) {
+        // 졸음창 진입
+        if (headingToBed) coach = {c:'#34d399',icon:'💚',t:lang==='ko'?'밤잠 시간':'Bedtime window',sub:lang==='ko'?'곧 잘 시간이에요':'Time to settle for bed'};
+        else coach = {c:'#34d399',icon:'💚',t:lang==='ko'?'재울 시간 ('+currentNapNum+'낮잠)':'Sleep window (Nap '+currentNapNum+')',sub:lang==='ko'?'졸음창 안에 들어왔어요':'In the sleep window'};
+      } else if (awMin >= wwRange.min - 15) {
+        // 졸음창 직전
+        coach = {c:'#60a5fa',icon:'💙',t:lang==='ko'?'곧 졸려요':'Getting sleepy',sub:lang==='ko'?'준비 시작 — 어둡고 조용하게':'Start the wind-down routine'};
+      } else {
+        coach = {c:'#60a5fa',icon:'⏰',t:lang==='ko'?'놀이 시간':'Play time',sub:t('home.coach.playDescLong')};
+      }
+    } else {
+      coach = {c:'#60a5fa',icon:'⏰',t:lang==='ko'?'기록만 — 깨시 범위는 3개월부터':'Recording only — WW range from 3mo',sub:''};
+    }
+
+    // ─── Tips (정적 규칙) ───
+    if (!isNightHour && coach) {
+      var tips = [];
+      var isAfternoon = nowHour >= 14 && nowHour < 18;
+      var isLast2 = headingToBed || (prof.n > 0 && currentNapNum >= prof.n - 1);
+      var cutoffMin = getLateNapCutoffMin(days);
+
+      if (isLast2) {
+        if (headingToBed && wwRange && awMin >= wwRange.min - 15 && awMin <= wwRange.max && isAfternoon) tips.push(t('home.tips.bath'));
+        if (!headingToBed && wwRange && awMin >= wwRange.min - 15 && awMin < wwRange.min) tips.push(t('home.tips.routineNow'));
+        if (isAfternoon && napsLeft === 1 && !asleep) tips.push(t('home.tips.lastNapAnywhere'));
+        if (prof.n >= 2 && lastNapWasShort && wwRange && awMin < wwRange.min) tips.push(t('home.tips.afterShort'));
+        if (prof.n === 1 && lastNapWasShort && wwRange && awMin < wwRange.min) tips.push(t('home.tips.afterShort1'));
+      }
+      // 늦은 오후 마지막 낮잠 놓침
+      if (nowMin >= cutoffMin && !asleep && napsDoneToday < prof.n && !headingToBed) {
+        var earlier = days < 240 ? 30 : days < 360 ? 45 : 30;
+        tips.push(t('home.tips.missedLastNap', {min:earlier}));
+      }
+      if (tips.length > 0) coach.tips = tips;
+
+      // ─── napAlert: 일일 budget 경고 (정적, 누적 기준) ───
+      if (oversleptDay && !headingToBed) {
+        coach.napAlert = {level:'red',msg:t('home.napAlert.dayOver'),sub:t('home.napAlert.overShort')};
+      } else if (nearMaxDay && !headingToBed && napBudgetLeft > 20) {
+        coach.napAlert = {level:'yellow',msg:t('home.napAlert.nextShort',{min:napBudgetLeft}),sub:t('home.napAlert.budgetLeft',{min:napBudgetLeft})};
+      } else if (nearMaxDay && !headingToBed && napBudgetLeft <= 20) {
+        coach.napAlert = {level:'yellow',msg:t('home.napAlert.almostDone'),sub:t('home.napAlert.microOnly')};
+      }
+    }
+  }
+
+  // ═══ ASLEEP COACHING (정적 규칙) ═══
+  if (prof && asleep && sS) {
+    var sleepMin = Math.floor(el / 60000);
+    var sH = new Date(sS).getHours();
+    var isNightNow = sH >= 18 || sH < 6 || headingToBed;
+    if (isNightNow) {
+      var nm = '';
+      if (sleepMin < 5) nm = t('home.nightSleep.starting');
+      else if (sleepMin < 15) nm = t('home.nightSleep.light');
+      else if (sleepMin < 60) nm = t('home.nightSleep.deep');
+      else if (sleepMin < 180) nm = t('home.nightSleep.ok');
+      else if (sleepMin < 360) nm = t('home.nightSleep.stir');
+      else nm = t('home.nightSleep.dawn');
+      coach = {c:'#9a8cf0',icon:'🌙',t:fD(el),sub:nm};
+    } else {
+      // 낮잠중 — 정적 규칙: 단계, 하드캡, budget, last-nap catnap
+      var perNapCap = getPerNapCap(days);
+      var phase = '';
+      if (sleepMin < 10) phase = t('home.napSleep.light');
+      else if (sleepMin < 30) phase = t('home.napSleep.entering');
+      else if (sleepMin < 45) phase = t('home.napSleep.cycle');
+      else if (sleepMin < 55) phase = t('home.napSleep.transition');
+      else phase = t('home.napSleep.deep');
+
+      var sleepMsg = phase;
+      var isLastOrOnly = napsLeft <= 1;
+      var timeToBedMin = Math.max(0, Math.floor((arcBedTs - Date.now()) / 60000));
+
+      if (isLastOrOnly && prof.n >= 2) {
+        var rec = getLastNapRec(days, timeToBedMin);
+        if (sleepMin >= perNapCap) {
+          sleepMsg = t('home.napSleep.overCap',{min:perNapCap});
+        } else if (rec.skip) {
+          sleepMsg = t('home.napSleep.skipNap',{bed:fT(arcBedTs)});
+        } else if (sleepMin >= rec.max) {
+          sleepMsg = phase + '\n\n' + t('home.napSleep.recMax',{min:rec.max,bed:fT(Date.now())});
+        } else if (sleepMin >= rec.min) {
+          sleepMsg = phase + '\n\n' + t('home.napSleep.recInRange',{min:rec.min,max:rec.max});
+        } else if (sleepMin >= 20) {
+          sleepMsg = phase + '\n\n' + t('home.napSleep.recBelow',{min:rec.min,max:rec.max});
+        }
+      } else {
+        // 일반 낮잠 — 단순 단계 + 하드캡
+        if (sleepMin < 30) sleepMsg = phase + t('home.napSleep.let30');
+        else if (sleepMin < perNapCap - 10) sleepMsg = phase + t('home.napSleep.letSleep');
+        else if (sleepMin < perNapCap) sleepMsg = (lang==='ko'?'⏰ 10분 후 깨워주세요 — 2시간 넘으면 밤잠에 영향':'⏰ Wake in 10 min — over 2h affects night sleep');
+        else sleepMsg = t('home.napSleep.enough');
+      }
+
+      coach = {c:'#9a8cf0',icon:'😴',t:t('home.sleeping')+fD(el),sub:sleepMsg};
+
+      // 하드캡 / budget 경고
+      var capLabel = perNapCap === 150 ? '2.5h' : (perNapCap === 180 ? '3h' : '2h');
+      var runningTotal = totDayNapMs + el;
+      var budgetNow = Math.max(0, Math.floor((maxDayNapMs - runningTotal) / 60000));
+      if (sleepMin >= perNapCap) coach.napAlert = {level:'red',msg:t('home.napAlert.capOver',{cap:capLabel}),sub:t('home.napAlert.capSub')};
+      else if (runningTotal > maxDayNapMs) coach.napAlert = {level:'red',msg:t('home.napAlert.dayOver'),sub:t('home.napAlert.dayOverWake')};
+      else if (budgetNow <= 10 && sleepMin >= 20) coach.napAlert = {level:'red',msg:t('home.napAlert.budgetLow',{min:budgetNow}),sub:t('home.napAlert.budgetWake')};
+      else if (budgetNow <= 30 && sleepMin >= 15) coach.napAlert = {level:'yellow',msg:t('home.napAlert.budgetLow',{min:budgetNow}),sub:fD(runningTotal)+' / '+fM(prof.maxDay)};
+    }
+  }
+
+  if (!coach) coach = {c:'#60a5fa',icon:'⏰',t:'',sub:''};
 
   return (
     <ScrollView showsVerticalScrollIndicator={false}>
@@ -230,24 +384,30 @@ export default function HomeScreen() {
         </View>
       </View>}
 
-      {/* ═══ Status line ═══ */}
-      {statusLine && <Text style={{color:'rgba(200,215,255,0.55)',fontSize:15,fontWeight:'700',textAlign:'center',marginBottom:10,marginTop:4}}>{statusLine}</Text>}
-
       {/* ═══ Wake window range (age-based, informational) ═══ */}
       {wwRange && <View style={[s.card,{backgroundColor:'rgba(154,140,240,0.06)',borderColor:'rgba(154,140,240,0.2)',padding:14}]}>
         <Text style={{color:'rgba(200,215,255,0.5)',fontSize:13,fontWeight:'700',textAlign:'center',marginBottom:4}}>{lang==='ko'?'권장 깨시':'Wake window'}</Text>
         <Text style={{color:'#c4b5fd',fontSize:19,fontWeight:'900',textAlign:'center',lineHeight:28}}>{fM(wwRange.min)+' ~ '+fM(wwRange.max)}</Text>
       </View>}
 
-      {/* ═══ Schedule arc (오늘 ☀️ → 🌙) ═══ */}
-      <ScheduleArc
-        wakeTs={arcWakeTs}
-        bedTs={arcBedTs}
-        slots={arcSlots}
-        name={name}
-        ageLabel={ageLabel}
-        lang={lang}
-      />
+      {/* ═══ Coach Card (정적 규칙 기반) ═══ */}
+      {prof && coach && coach.t ? <View style={[s.card,{borderColor:coach.c+'30'}]}>
+        <View style={{alignItems:'center',gap:4}}>
+          <Text style={{fontSize:20}}>{coach.icon}</Text>
+          <Text style={{color:coach.c,fontSize:19,fontWeight:'800',textAlign:'center'}}>{coach.t}</Text>
+          {!asleep && lW ? <Text style={{color:'rgba(200,215,255,0.45)',fontSize:13,fontWeight:'600',marginTop:2}}>{(lang==='ko'?'깨어있는 시간 ':'awake ')+fD(awMs)}</Text> : null}
+        </View>
+        {coach.sub ? <Text style={{color:'rgba(200,215,255,0.55)',fontSize:15,lineHeight:25,marginTop:8,textAlign:'center'}}>{coach.sub}</Text> : null}
+        {coach.tips && coach.tips.length > 0 ? <View style={{marginTop:8,gap:4}}>
+          {coach.tips.map(function(tip,i){return <View key={i} style={{backgroundColor:'rgba(255,255,255,0.04)',borderWidth:1,borderColor:'rgba(255,255,255,0.08)',borderRadius:12,padding:10}}>
+            <Text style={{color:'rgba(200,215,255,0.6)',fontSize:15,lineHeight:25,textAlign:'center'}}>{tip}</Text>
+          </View>;})}
+        </View> : null}
+        {coach.napAlert ? <View style={{marginTop:10,padding:14,borderRadius:14,borderWidth:1.5,borderColor:coach.napAlert.level==='red'?'rgba(248,113,113,0.4)':'rgba(240,205,138,0.3)',backgroundColor:coach.napAlert.level==='red'?'rgba(248,113,113,0.1)':'rgba(240,205,138,0.08)'}}>
+          <Text style={{color:coach.napAlert.level==='red'?'#f87171':'#f0cd8a',fontWeight:'900',fontSize:17,lineHeight:26,textAlign:'center'}}>{coach.napAlert.msg}</Text>
+          <Text style={{color:coach.napAlert.level==='red'?'#fca5a5':'#fde68a',fontSize:15,lineHeight:24,marginTop:2,textAlign:'center'}}>{coach.napAlert.sub}</Text>
+        </View> : null}
+      </View> : null}
 
       {/* ═══ Sleep / Wake card ═══ */}
       <View style={s.card}>
@@ -300,6 +460,16 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>)}
       </View>
+
+      {/* ═══ Schedule arc (오늘 ☀️ → 🌙) ═══ */}
+      <ScheduleArc
+        wakeTs={arcWakeTs}
+        bedTs={arcBedTs}
+        slots={arcSlots}
+        name={name}
+        ageLabel={ageLabel}
+        lang={lang}
+      />
 
       {/* ═══ Night wakes modal ═══ */}
       {pendingStop && <View style={[s.card,{backgroundColor:'rgba(154,140,240,0.12)',borderColor:'rgba(154,140,240,0.35)'}]}>

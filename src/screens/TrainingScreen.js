@@ -105,9 +105,18 @@ export default function TrainingScreen() {
     var bedMins = []; dayKeys.slice(0, 7).forEach(function(dk) { var ns = dks2[dk].filter(function(l) { var h = new Date(l.start).getHours(); return (h >= 17 || h < 6); }); if (ns.length > 0) { var m = new Date(ns[0].start).getHours() * 60 + new Date(ns[0].start).getMinutes(); if (m < 360) m += 1440; bedMins.push(m); } });
     var btScore = 0, btDetail = '';
     if (bedMins.length >= 3) { var avg = Math.round(bedMins.reduce(function(a, v) { return a + v; }, 0) / bedMins.length); var btStd = Math.round(Math.sqrt(bedMins.reduce(function(a, v) { return a + (v - avg) * (v - avg); }, 0) / bedMins.length)); if (btStd <= 10) { btScore = 25; btDetail = t('train.pred.veryStable', { std: btStd }); } else if (btStd <= 20) { btScore = 18; btDetail = t('train.pred.okStable', { std: btStd }); } else if (btStd <= 30) { btScore = 10; btDetail = t('train.pred.avgStable', { std: btStd }); } else if (btStd <= 45) { btScore = 5; btDetail = t('train.pred.irregular', { std: btStd }); } else { btScore = 2; btDetail = t('train.pred.irregular', { std: btStd }); } } else { btScore = 0; btDetail = t('train.pred.noData', { n: bedMins.length }); }
-    var allEase = sl.filter(function(l) { return l.end && l.ease && !l.micro; }); var easyN = allEase.filter(function(l) { return l.ease === 'easy' || l.ease === 'under5' || l.ease === '5to15'; }).length; var ePct = allEase.length > 0 ? Math.round(easyN / allEase.length * 100) : 0;
+    // 깨시 적중률: ease==='5to15' (5-15분 sweet spot)만 카운트.
+    // under5는 과피로 가능성, 15+는 WW 어긋남 → 둘 다 적중 아님.
+    var allEase = sl.filter(function(l) { return l.end && l.ease && !l.micro; });
+    var hitN = allEase.filter(function(l) { return l.ease === '5to15'; }).length;
+    var ePct = allEase.length > 0 ? Math.round(hitN / allEase.length * 100) : 0;
     var wwScore = 0, wwDetail = '';
-    if (allEase.length < 5) { wwScore = 0; wwDetail = t('train.pred.noDataWW', { n: allEase.length }); } else if (ePct >= 80) { wwScore = 25; wwDetail = t('train.pred.wwGood', { pct: ePct }); } else if (ePct >= 65) { wwScore = 18; wwDetail = t('train.pred.wwGood', { pct: ePct }); } else if (ePct >= 50) { wwScore = 10; wwDetail = t('train.pred.wwOk', { pct: ePct }); } else if (ePct >= 35) { wwScore = 5; wwDetail = t('train.pred.wwBad', { pct: ePct }); } else { wwScore = 2; wwDetail = t('train.pred.wwBad', { pct: ePct }); }
+    if (allEase.length < 5) { wwScore = 0; wwDetail = t('train.pred.noDataWW', { n: allEase.length }); }
+    else if (ePct >= 60) { wwScore = 25; wwDetail = t('train.pred.wwGood', { pct: ePct }); }
+    else if (ePct >= 45) { wwScore = 20; wwDetail = t('train.pred.wwGood', { pct: ePct }); }
+    else if (ePct >= 30) { wwScore = 14; wwDetail = t('train.pred.wwOk', { pct: ePct }); }
+    else if (ePct >= 20) { wwScore = 8;  wwDetail = t('train.pred.wwBad', { pct: ePct }); }
+    else { wwScore = 3; wwDetail = t('train.pred.wwBad', { pct: ePct }); }
     var nsScore = 0, nsDetail = '';
     var nwVals = []; dayKeys.slice(0, 7).forEach(function(dk) { var ns2 = dks2[dk].filter(function(l) { var h = new Date(l.start).getHours(); return (h >= 18 || h < 6) && l.end - l.start > 120 * 60000; }).sort(function(a,b){return (b.end-b.start)-(a.end-a.start);}); if (ns2.length > 0 && ns2[0].nightWakes != null) nwVals.push(ns2[0].nightWakes); });
     if (nwVals.length >= 3) {

@@ -32,12 +32,12 @@ export default function ScheduleArc(props) {
   var screenW = Dimensions.get('window').width;
   var W = Math.max(260, screenW - 72);
   var PAD_X = 26;
-  var BASE_Y = 110;
-  var PEAK_Y = 28;
-  var SVG_H = 200;
-  var TIME_Y = 142;
-  var LABEL_Y = 162;
-  var DUR_Y = 180;
+  var BASE_Y = 95;
+  var PEAK_Y = 50;
+  var SVG_H = 195;
+  var TIME_Y = 132;
+  var LABEL_Y = 154;
+  var DUR_Y = 174;
 
   var totalMs = bedTs - wakeTs;
   var amp = BASE_Y - PEAK_Y;
