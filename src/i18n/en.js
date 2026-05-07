@@ -194,6 +194,12 @@ export const en = {
       t21tips: ["Hardest transition. Give it 2–4 weeks.","1-nap days: nap 4–5 hr after waking. Earlier bedtime.","2-nap days: keep both if the first one was short.","Trick: push that morning nap a little later each day."],
       somedays3: "Some days they'll still need 3. That's totally normal.",
     },
+    schedAdvice: {
+      title: '💡 Schedule guide',
+      tip1: "This schedule is just an example. Adjust within the age-appropriate wake window range based on your baby.",
+      tip2: "Want a consistent bedtime? Work backward from your target. E.g., for a 7:30 PM bedtime, the last nap should end before 4:00 PM.",
+      tip3: "Day way off track? Skip the last nap and try bedtime 30 min earlier.",
+    },
     graduation: { title: '🎓 Almost done with Naptune!', desc: "Routine matters more than wake windows now. Try quiet time instead of naps." },
     wwAdj: { long: 'Long nap → 15 min longer', poorNight: 'Bad night → 10 min shorter', bridgeFail: 'Bridge nap too short → 10 min earlier' },
     tips: {

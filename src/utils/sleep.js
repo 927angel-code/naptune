@@ -93,25 +93,28 @@ export const getWWRange = (days) => {
   return getHbWW(days);
 };
 
-// WW v2 — 낮잠 N회 기준 슬롯별 WW 배열.
-// 슬롯 수 = napCount + 1 (마지막은 취침 전 깨시).
-// 1회 낮잠은 null 반환 → UI에서 WW 섹션 숨김.
-//   5회: [min, mid, mid, mid, mid, max]
-//   4회: [min, mid, mid, mid, max]
-//   3회: [min, mid, mid, max]
-//   2회: [min, mid, max]
+// WW v2 — 낮잠 N회 기준 슬롯별 WW 배열 (선형 증가).
+// 슬롯 수 = napCount + 1 (i=0 첫 깨시 ~ i=napCount 취침 전 깨시).
+// 1회 낮잠 또는 napCount<2 → null 반환 (UI에서 WW 섹션 숨김).
+//
+// 공식: step = (max - min) / napCount
+//       wws[i] = Math.round(min + step * i)
+//       → 항상 min으로 시작, 균등 증가, max로 끝남
+//
+// 예시 (210일, napCount=3): step=25 → [135, 160, 185, 210]
 export const getWWArray = (days, napCount) => {
   if (!napCount || napCount < 2) return null;
   const r = getHbWW(days);
   const min = r.min;
   const max = r.max;
-  const mid = Math.round((min + max) / 2);
-  const slots = napCount + 1;
+  const step = (max - min) / napCount;
   const arr = [];
-  for (let i = 0; i < slots; i++) {
-    if (i === 0) arr.push(min);
-    else if (i === slots - 1) arr.push(max);
-    else arr.push(mid);
+  for (let i = 0; i <= napCount; i++) {
+    let v = Math.round(min + step * i);
+    // 가드레일
+    if (v > max) v = max;
+    if (v < min) v = min;
+    arr.push(v);
   }
   return arr;
 };

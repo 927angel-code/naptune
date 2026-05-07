@@ -51,6 +51,9 @@ export default function HomeScreen() {
   var stPend = useState(null); var pendingStop = stPend[0]; var setPendingStop = stPend[1];
   var stBD = useState(true); var bannerDismissed = stBD[0]; var setBannerDismissed = stBD[1];
   useEffect(function() { LD('bannerDismissed', false).then(function(v) { stBD[1](v); }); }, []);
+  // 스케줄 가이드 카드 — 처음엔 열려있고, 한번 닫으면 다음에도 닫힌 채로 유지
+  var stSA = useState(true); var schedAdviceOpen = stSA[0]; var setSchedAdviceOpen = stSA[1];
+  useEffect(function() { LD('schedAdviceOpen', true).then(function(v) { stSA[1](v); }); }, []);
   var stSN = useState(''); var setupName = stSN[0]; var setSetupName = stSN[1];
   var stSY = useState('2025'); var sYear = stSY[0]; var setSYear = stSY[1];
   var stSM = useState('01'); var sMonth = stSM[0]; var setSMonth = stSM[1];
@@ -507,6 +510,19 @@ export default function HomeScreen() {
         ageLabel={ageLabel}
         lang={lang}
       />
+
+      {/* ═══ Schedule advice (collapsible, persisted) ═══ */}
+      <View style={[s.card,{backgroundColor:'rgba(154,140,240,0.06)',borderColor:'rgba(154,140,240,0.2)',padding:16}]}>
+        <TouchableOpacity onPress={function(){ var next = !schedAdviceOpen; setSchedAdviceOpen(next); SV('schedAdviceOpen', next); }} activeOpacity={0.7} style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center'}}>
+          <Text style={{color:'#c4b5fd',fontSize:15,fontWeight:'800'}}>{t('home.schedAdvice.title')}</Text>
+          <Text style={{color:'rgba(200,215,255,0.5)',fontSize:17,fontWeight:'800'}}>{schedAdviceOpen ? '−' : '+'}</Text>
+        </TouchableOpacity>
+        {schedAdviceOpen && <View style={{marginTop:10,gap:8}}>
+          <Text style={{color:'rgba(200,215,255,0.65)',fontSize:14,lineHeight:22}}>{t('home.schedAdvice.tip1')}</Text>
+          <Text style={{color:'rgba(200,215,255,0.65)',fontSize:14,lineHeight:22}}>{t('home.schedAdvice.tip2')}</Text>
+          <Text style={{color:'rgba(200,215,255,0.65)',fontSize:14,lineHeight:22}}>{t('home.schedAdvice.tip3')}</Text>
+        </View>}
+      </View>
 
       <View style={{height:20}}/>
     </ScrollView>

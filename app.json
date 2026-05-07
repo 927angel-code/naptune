@@ -4,7 +4,9 @@
     "slug": "naptune",
     "scheme": "naptune",
     "version": "1.0.0",
-    "runtimeVersion": { "policy": "sdkVersion" },
+    "runtimeVersion": {
+      "policy": "sdkVersion"
+    },
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "icon": "./assets/icon.png",
@@ -18,7 +20,7 @@
     ],
     "ios": {
       "bundleIdentifier": "com.naptune.app",
-      "buildNumber": "87",
+      "buildNumber": "88",
       "supportsTablet": false,
       "infoPlist": {
         "CFBundleDisplayName": "Naptune",
