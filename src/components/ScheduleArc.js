@@ -1,7 +1,6 @@
-// ScheduleArc — 오늘 ☀️ → 🌙 곡선 시각화.
-// Q-bezier (단일 quadratic) 위에 점들이 시간 비율(t) 기준으로 정확히 올라감.
-// y(t) = BASE_Y - amp * 4 * t * (1-t) ↔ Q midX (BASE_Y - 2*amp) endX BASE_Y
-// → 같은 포물선 공식이라 path와 점의 좌표가 항상 일치.
+// ScheduleArc — 단일 Q-bezier 포물선 (wake → bed).
+// 점들은 시간 비율(t)에 따라 곡선 위에 정확히 올라감: y(t) = BASE_Y - amp·4·t·(1-t).
+// WW 라벨은 각 구간의 곡선 자체 위 (midT의 curve y) 약간 위.
 //
 // ES5/Hermes 호환: ?. ?? 미사용.
 
@@ -28,16 +27,15 @@ export default function ScheduleArc(props) {
   if (!wakeTs || !bedTs || bedTs <= wakeTs) return null;
 
   // ─── Dimensions ───
-  // App content padding: 14, card padding: 22 → Svg width = screen - 72
   var screenW = Dimensions.get('window').width;
   var W = Math.max(260, screenW - 72);
   var PAD_X = 26;
-  var BASE_Y = 95;
-  var PEAK_Y = 50;
-  var SVG_H = 195;
-  var TIME_Y = 132;
-  var LABEL_Y = 154;
-  var DUR_Y = 174;
+  var BASE_Y = 110;
+  var PEAK_Y = 35;
+  var SVG_H = 215;
+  var TIME_Y = 150;
+  var LABEL_Y = 172;
+  var DUR_Y = 192;
 
   var totalMs = bedTs - wakeTs;
   var amp = BASE_Y - PEAK_Y;
@@ -55,10 +53,11 @@ export default function ScheduleArc(props) {
   var pts = [];
   pts.push({
     ts: wakeTs,
+    endTs: wakeTs,
     timeLabel: clock(wakeTs),
     label: lang === 'ko' ? '기상' : 'Wake',
     color: '#f5c025',
-    r: 11,
+    r: 7,
     kind: 'wake'
   });
   for (var i = 0; i < slots.length; i++) {
@@ -68,25 +67,29 @@ export default function ScheduleArc(props) {
     var isCat = !!(sl.isCatnap || sl.lastNap);
     pts.push({
       ts: sl.start,
+      endTs: sl.end || sl.start,
       timeLabel: clock(sl.start),
       label: (lang === 'ko' ? '낮잠' : 'Nap') + (i + 1) + (isCat ? ' ⭐' : ''),
       durMin: dur > 0 ? dur : null,
       color: isCat ? '#a78bfa' : '#f4a865',
-      r: 13,
-      kind: 'nap'
+      r: 8,
+      kind: 'nap',
+      predicted: !!sl.predicted
     });
   }
   pts.push({
     ts: bedTs,
+    endTs: bedTs,
     timeLabel: clock(bedTs),
     label: '🌙',
     color: '#1a1f4a',
     stroke: '#a78bfa',
-    r: 13,
-    kind: 'bed'
+    r: 8,
+    kind: 'bed',
+    predicted: !!props.bedPredicted
   });
 
-  // ─── Compute (x, y) on the parabola for each point ───
+  // ─── 점들의 (x, y): 단일 포물선 위 ───
   for (var j = 0; j < pts.length; j++) {
     var t = (pts[j].ts - wakeTs) / totalMs;
     if (t < 0) t = 0;
@@ -96,39 +99,39 @@ export default function ScheduleArc(props) {
     pts[j].y = yOnCurve(t);
   }
 
-  // ─── Q bezier path ───
+  // ─── 단일 Q-bezier path: wake에서 bed까지 한 번에 ───
   var startX = PAD_X;
   var endX = W - PAD_X;
-  var midX = (startX + endX) / 2;
-  var ctrlY = BASE_Y - 2 * amp; // apex hits PEAK_Y at t=0.5
-  var strokeD = 'M' + startX + ' ' + BASE_Y + ' Q' + midX + ' ' + ctrlY + ' ' + endX + ' ' + BASE_Y;
+  var midParabolaX = (startX + endX) / 2;
+  var ctrlY = BASE_Y - 2 * amp; // apex가 t=0.5에서 PEAK_Y에 닿도록
+  var strokeD = 'M' + startX + ' ' + BASE_Y + ' Q' + midParabolaX + ' ' + ctrlY + ' ' + endX + ' ' + BASE_Y;
   var fillD = strokeD + ' Z';
 
-  // ─── WW labels (between consecutive points, above curve) ───
+  // ─── WW 라벨: 두 점 중 더 높은 점(작은 y) 기준 위로 18px ───
   var wwLabels = [];
   for (var k = 0; k < pts.length - 1; k++) {
     var a = pts[k];
     var b = pts[k + 1];
-    var midT = (a.t + b.t) / 2;
-    var mx = xAt(midT);
-    var my = yOnCurve(midT);
-    var wwMin = Math.round((b.ts - a.ts) / 60000);
+    var centerX = (a.x + b.x) / 2;
+    var higherDotY = Math.min(a.y, b.y);
+    var labelY = higherDotY - 18;
+    var wwMin = Math.round((b.ts - a.endTs) / 60000);
     if (wwMin <= 0) continue;
     var col;
     if (k === 0) col = '#f5c025';
     else if (k === pts.length - 2) col = '#c4b5fd';
     else col = '#f4a865';
-    wwLabels.push({ x: mx, y: my - 14, text: fM(wwMin), color: col });
+    wwLabels.push({ x: centerX, y: labelY, text: fM(wwMin), color: col });
   }
 
   return (
     <View style={s.card}>
       <View style={s.headerRow}>
-        <Text style={s.title}>{lang === 'ko' ? '오늘 ☀️ → 🌙' : 'Today ☀️ → 🌙'}</Text>
+        <Text style={s.title}>{lang === 'ko' ? '오늘의 스케줄 (예측)' : "Today's schedule (estimated)"}</Text>
         <Text style={s.sub}>{name + (ageLabel ? ' · ' + ageLabel : '')}</Text>
       </View>
 
-      <Svg width={W} height={SVG_H}>
+      <Svg width={W} height={SVG_H} viewBox={'0 0 ' + W + ' ' + SVG_H}>
         <Defs>
           <LinearGradient id="napStroke" x1="0" y1="0" x2="1" y2="0">
             <Stop offset="0" stopColor="#f5c025" />
@@ -149,7 +152,7 @@ export default function ScheduleArc(props) {
         {wwLabels.map(function(l, ix) {
           return (
             <SvgText key={'w' + ix} x={l.x} y={l.y} textAnchor="middle"
-              fontSize="13" fontWeight="bold" fill={l.color}>
+              fontSize="11" fontWeight="700" fill={l.color}>
               {l.text}
             </SvgText>
           );
@@ -159,15 +162,18 @@ export default function ScheduleArc(props) {
           return (
             <Circle key={'c' + ix} cx={p.x} cy={p.y} r={p.r}
               fill={p.color}
+              fillOpacity={p.predicted ? 0.35 : 1}
               stroke={p.stroke ? p.stroke : 'transparent'}
-              strokeWidth={p.stroke ? 2.5 : 0} />
+              strokeWidth={p.stroke ? 2.5 : 0}
+              strokeOpacity={p.predicted ? 0.45 : 1} />
           );
         })}
 
         {pts.map(function(p, ix) {
           return (
             <SvgText key={'t' + ix} x={p.x} y={TIME_Y} textAnchor="middle"
-              fontSize="13" fontWeight="bold" fill="#ffffff">
+              fontSize="12" fontWeight="700"
+              fill={p.predicted ? 'rgba(255,255,255,0.45)' : '#ffffff'}>
               {p.timeLabel}
             </SvgText>
           );
@@ -176,7 +182,8 @@ export default function ScheduleArc(props) {
         {pts.map(function(p, ix) {
           return (
             <SvgText key={'l' + ix} x={p.x} y={LABEL_Y} textAnchor="middle"
-              fontSize="11" fill="rgba(200,215,255,0.65)">
+              fontSize="10"
+              fill={p.predicted ? 'rgba(200,215,255,0.35)' : 'rgba(200,215,255,0.65)'}>
               {p.label}
             </SvgText>
           );
@@ -186,8 +193,9 @@ export default function ScheduleArc(props) {
           if (!p.durMin) return null;
           return (
             <SvgText key={'d' + ix} x={p.x} y={DUR_Y} textAnchor="middle"
-              fontSize="10" fill="rgba(200,215,255,0.4)">
-              {p.durMin + 'm'}
+              fontSize="9"
+              fill={p.predicted ? 'rgba(200,215,255,0.25)' : 'rgba(200,215,255,0.4)'}>
+              {fM(p.durMin)}
             </SvgText>
           );
         })}

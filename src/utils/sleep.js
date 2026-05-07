@@ -46,20 +46,82 @@ export const isNightSleep = (log) => {
   return h >= 18 || h < 6;
 };
 
-// ═══ Wake window range by month (Huckleberry data) ═══
-// Returns { min, max } in minutes, or null for under 3mo (range too variable).
+// ═══ WW v2 — Huckleberry 검증 데이터 (월령 앵커 + 선형 보간) ═══
+// 일수(days) 기준 wake window {min, max} (분).
+// 앵커 사이는 선형 보간, 범위 밖은 가장 가까운 앵커 값 사용.
+export const HB_WW = [
+  { days: 90,  min: 60,  max: 120 },
+  { days: 120, min: 90,  max: 150 },
+  { days: 150, min: 120, max: 180 },
+  { days: 180, min: 120, max: 180 },
+  { days: 210, min: 135, max: 210 },
+  { days: 240, min: 135, max: 210 },
+  { days: 270, min: 165, max: 210 },
+  { days: 300, min: 180, max: 225 },
+  { days: 330, min: 180, max: 225 },
+  { days: 360, min: 195, max: 240 },
+  { days: 420, min: 195, max: 240 },
+  { days: 480, min: 195, max: 240 }
+];
+
+// WW v2 — Huckleberry 테이블에서 선형 보간으로 {min, max} 반환.
+export const getHbWW = (days) => {
+  if (days <= HB_WW[0].days) return { min: HB_WW[0].min, max: HB_WW[0].max };
+  if (days >= HB_WW[HB_WW.length - 1].days) {
+    const last = HB_WW[HB_WW.length - 1];
+    return { min: last.min, max: last.max };
+  }
+  for (let i = 0; i < HB_WW.length - 1; i++) {
+    const a = HB_WW[i];
+    const b = HB_WW[i + 1];
+    if (days >= a.days && days <= b.days) {
+      const span = Math.max(1, b.days - a.days);
+      const r = (days - a.days) / span;
+      return {
+        min: Math.round(a.min + (b.min - a.min) * r),
+        max: Math.round(a.max + (b.max - a.max) * r)
+      };
+    }
+  }
+  return { min: HB_WW[0].min, max: HB_WW[0].max };
+};
+
+// WW v2 — getWWRange는 getHbWW 위임 (기존 API 유지).
+// 90일 미만은 변동성 커서 null 반환 (UI에서 안 표시).
 export const getWWRange = (days) => {
-  const months = Math.floor(days / 30);
-  if (months < 3) return null;
-  if (months === 3) return { min: 60, max: 120 };
-  if (months === 4) return { min: 90, max: 150 };
-  if (months <= 6) return { min: 120, max: 180 };
-  if (months <= 8) return { min: 135, max: 210 };
-  if (months === 9) return { min: 165, max: 210 };
-  if (months <= 11) return { min: 180, max: 225 };
-  if (months <= 16) return { min: 195, max: 240 };
-  if (months <= 23) return { min: 240, max: 300 };
-  return { min: 315, max: 360 };
+  if (days < 90) return null;
+  return getHbWW(days);
+};
+
+// WW v2 — 낮잠 N회 기준 슬롯별 WW 배열.
+// 슬롯 수 = napCount + 1 (마지막은 취침 전 깨시).
+// 1회 낮잠은 null 반환 → UI에서 WW 섹션 숨김.
+//   5회: [min, mid, mid, mid, mid, max]
+//   4회: [min, mid, mid, mid, max]
+//   3회: [min, mid, mid, max]
+//   2회: [min, mid, max]
+export const getWWArray = (days, napCount) => {
+  if (!napCount || napCount < 2) return null;
+  const r = getHbWW(days);
+  const min = r.min;
+  const max = r.max;
+  const mid = Math.round((min + max) / 2);
+  const slots = napCount + 1;
+  const arr = [];
+  for (let i = 0; i < slots; i++) {
+    if (i === 0) arr.push(min);
+    else if (i === slots - 1) arr.push(max);
+    else arr.push(mid);
+  }
+  return arr;
+};
+
+// WW v2 — 가드레일: 계산된 WW를 [min, max] 범위로 자르기.
+export const clampWW = (ww, days) => {
+  const r = getHbWW(days);
+  if (ww > r.max) return r.max;
+  if (ww < r.min) return r.min;
+  return ww;
 };
 
 // ═══ Catnap (last nap of multi-nap day) max length by months ═══
@@ -163,17 +225,122 @@ export const gP = (days) => {
   return PROF[PROF.length - 1];
 };
 
-// ═══ Age-interpolated WW — linear interpolation within bracket ═══
-export const interpWW = (days) => {
-  const p = gP(days);
-  if (!p) return { a: 60, b: 80, baseWW: 70 };
-  // Position within bracket: 0.0 = bracket start, 1.0 = bracket end
-  const range = Math.max(1, p.max - p.min);
-  const pos = Math.min(1, Math.max(0, (days - p.min) / range));
-  // Interpolate: bracket start → a, bracket end → b
-  const interpA = Math.round(p.a + pos * (p.b - p.a) * 0.3); // min WW grows slowly
-  const interpB = Math.round(p.a + pos * (p.b - p.a));         // max WW grows at full rate
-  const baseWW = Math.round(interpA + (interpB - interpA) * 0.5);
-  return { a: interpA, b: interpB, baseWW: baseWW, ot: Math.round(p.ot - (1-pos) * (p.ot - p.b) * 0.3) };
+// WW v2 — interpWW 제거됨. getHbWW / getWWArray 사용.
+
+// WW v2 — 위치별 낮잠 길이 5일 평균 (이상값 30~120분 필터, 마이크로/밤잠 제외)
+// 반환: { 1: avgMin, 2: avgMin, ... } (1-indexed by nap order)
+export const anaNapDur = (sl) => {
+  const result = {};
+  if (!sl || sl.length === 0) return result;
+  const today0 = new Date(); today0.setHours(0,0,0,0);
+  const cutoff = today0.getTime() - 5 * 86400000;
+
+  const byDay = {};
+  for (let i = 0; i < sl.length; i++) {
+    const l = sl[i];
+    if (!l.end) continue;
+    if (l.start < cutoff) continue;
+    const h = new Date(l.start).getHours();
+    if (h >= 18 || h < 6) continue;
+    if (l.micro) continue;
+    const d = new Date(l.start);
+    const key = d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
+    if (!byDay[key]) byDay[key] = [];
+    byDay[key].push(l);
+  }
+
+  const byPos = {};
+  Object.keys(byDay).forEach(function(key) {
+    const naps = byDay[key].sort(function(a, b) { return a.start - b.start; });
+    for (let ni = 0; ni < naps.length; ni++) {
+      const dur = Math.floor((naps[ni].end - naps[ni].start) / 60000);
+      if (dur < 30 || dur > 120) continue;
+      const pos = ni + 1;
+      if (!byPos[pos]) byPos[pos] = [];
+      byPos[pos].push(dur);
+    }
+  });
+
+  Object.keys(byPos).forEach(function(pos) {
+    const arr = byPos[pos];
+    if (arr.length === 0) return;
+    let sum = 0;
+    for (let k = 0; k < arr.length; k++) sum += arr[k];
+    result[pos] = Math.round(sum / arr.length);
+  });
+
+  return result;
+};
+
+// WW v2 — 하루 스케줄 예측 (forward from wake).
+// 기록된 낮잠은 그대로 사용, 미진행 슬롯은 WW 배열로 forward 계산.
+// 마지막 낮잠은 catnap (월령별 max 적용). 모든 낮잠은 perNapCap로 제한.
+//
+// params:
+//   wakeTs:        오늘 기상 timestamp
+//   recordedNaps:  오늘 기록된 낮잠 [{start, end}, ...] (시간 순)
+//   days:          아기 일수
+//   napCount:      목표 낮잠 수 (보통 prof.n)
+//   napDurAvg:     anaNapDur 결과 {pos: avgMin} (없으면 napDurDefault 사용)
+//   napDurDefault: 평균 없을 때 fallback (분, 보통 prof.nd)
+//
+// 반환: { slots: [...], predBedTs }
+//   slot: {start, end, predDur, isCatnap, lastNap, recorded:true|undefined, predicted:true|undefined}
+export const predictDaySchedule = (params) => {
+  const days = params.days || 0;
+  const napCount = params.napCount || 0;
+  const wakeTs = params.wakeTs;
+  const recordedNaps = params.recordedNaps || [];
+  const napDurAvg = params.napDurAvg || {};
+  const napDurDefault = params.napDurDefault || 60;
+
+  const wwArr = getWWArray(days, napCount);
+  if (!wwArr || !wakeTs) return { slots: [], predBedTs: 0 };
+
+  const months = Math.floor(days / 30);
+  const catMax = catnapMaxByMonths(months);
+  const cap = getPerNapCap(days);
+
+  const slots = [];
+  let cur = wakeTs;
+
+  for (let i = 0; i < napCount; i++) {
+    const isLast = i === napCount - 1;
+    const isCatnap = isLast && napCount >= 2 && catMax > 0;
+    const ww = wwArr[i];
+
+    if (i < recordedNaps.length) {
+      const rec = recordedNaps[i];
+      slots.push({
+        start: rec.start,
+        end: rec.end,
+        predDur: Math.round((rec.end - rec.start) / 60000),
+        isCatnap: isCatnap,
+        lastNap: isLast,
+        recorded: true
+      });
+      cur = rec.end;
+    } else {
+      const napStart = cur + ww * 60000;
+      let napDur = napDurAvg[i + 1] ? napDurAvg[i + 1] : napDurDefault;
+      if (isCatnap && catMax > 0) napDur = Math.min(napDur, catMax);
+      napDur = Math.min(napDur, cap);
+      napDur = Math.max(20, napDur);
+      const napEnd = napStart + napDur * 60000;
+      slots.push({
+        start: napStart,
+        end: napEnd,
+        predDur: napDur,
+        isCatnap: isCatnap,
+        lastNap: isLast,
+        predicted: true
+      });
+      cur = napEnd;
+    }
+  }
+
+  const lastWW = wwArr[wwArr.length - 1];
+  const predBedTs = cur + lastWW * 60000;
+  return { slots: slots, predBedTs: predBedTs };
 };
 

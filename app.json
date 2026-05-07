@@ -4,7 +4,7 @@
     "slug": "naptune",
     "scheme": "naptune",
     "version": "1.0.0",
-    "runtimeVersion": "0.9.0",
+    "runtimeVersion": { "policy": "sdkVersion" },
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "icon": "./assets/icon.png",

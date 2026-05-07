@@ -23,6 +23,7 @@ export default function TrainingScreen() {
   var tStartDate = appCtx.tStartDate, setTStartDate = appCtx.setTStartDate;
   var tStartDateNap = appCtx.tStartDateNap, setTStartDateNap = appCtx.setTStartDateNap;
   var savedMethod = appCtx.savedMethod, setSavedMethod = appCtx.setSavedMethod;
+  var selfSleep = appCtx.selfSleep;
 
   // Auto-calculate training day from start date (calendar days)
   useEffect(function() {
@@ -105,10 +106,12 @@ export default function TrainingScreen() {
     var bedMins = []; dayKeys.slice(0, 7).forEach(function(dk) { var ns = dks2[dk].filter(function(l) { var h = new Date(l.start).getHours(); return (h >= 17 || h < 6); }); if (ns.length > 0) { var m = new Date(ns[0].start).getHours() * 60 + new Date(ns[0].start).getMinutes(); if (m < 360) m += 1440; bedMins.push(m); } });
     var btScore = 0, btDetail = '';
     if (bedMins.length >= 3) { var avg = Math.round(bedMins.reduce(function(a, v) { return a + v; }, 0) / bedMins.length); var btStd = Math.round(Math.sqrt(bedMins.reduce(function(a, v) { return a + (v - avg) * (v - avg); }, 0) / bedMins.length)); if (btStd <= 10) { btScore = 25; btDetail = t('train.pred.veryStable', { std: btStd }); } else if (btStd <= 20) { btScore = 18; btDetail = t('train.pred.okStable', { std: btStd }); } else if (btStd <= 30) { btScore = 10; btDetail = t('train.pred.avgStable', { std: btStd }); } else if (btStd <= 45) { btScore = 5; btDetail = t('train.pred.irregular', { std: btStd }); } else { btScore = 2; btDetail = t('train.pred.irregular', { std: btStd }); } } else { btScore = 0; btDetail = t('train.pred.noData', { n: bedMins.length }); }
-    // 깨시 적중률: ease==='5to15' (5-15분 sweet spot)만 카운트.
-    // under5는 과피로 가능성, 15+는 WW 어긋남 → 둘 다 적중 아님.
+    // 깨시 적중률: ease==='5to15' 기본. selfSleep 켜진 아기는 'under5'도 적중으로 인정.
+    // (혼자 잘 잠드는 아기는 5분 이내도 효율적인 자기진정으로 봄)
     var allEase = sl.filter(function(l) { return l.end && l.ease && !l.micro; });
-    var hitN = allEase.filter(function(l) { return l.ease === '5to15'; }).length;
+    var hitN = allEase.filter(function(l) {
+      return l.ease === '5to15' || (selfSleep && l.ease === 'under5');
+    }).length;
     var ePct = allEase.length > 0 ? Math.round(hitN / allEase.length * 100) : 0;
     var wwScore = 0, wwDetail = '';
     if (allEase.length < 5) { wwScore = 0; wwDetail = t('train.pred.noDataWW', { n: allEase.length }); }
@@ -194,9 +197,6 @@ export default function TrainingScreen() {
           ); })}
           <View style={s.progressBar}><View style={[s.progressFill, { width: (trainScore / 4 * 100) + '%' }]} /></View>
           <Text style={s.scoreText}>{trainScore + '/4 ' + t('train.lock.met')}</Text>
-          <TouchableOpacity onPress={function() { setBypass(true); }} style={s.previewBtn}>
-            <Text style={s.previewBtnText}>{t('train.preview')}</Text>
-          </TouchableOpacity>
         </View>
       </ScrollView>
     );

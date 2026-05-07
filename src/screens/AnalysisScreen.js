@@ -46,6 +46,10 @@ function AnalysisScreenInner() {
   var appCtx = useApp();
   var name = appCtx.name, bday = appCtx.bday, sl = appCtx.sl, feeds = appCtx.feeds;
   var tOn = appCtx.tOn, tDy = appCtx.tDy;
+  var selfSleep = appCtx.selfSleep;
+  // selfSleep 아기는 under5도 적중으로 인정 (스스로 빨리 잠드는 것)
+  var hitEases = selfSleep ? ['under5', '5to15'] : ['5to15'];
+  var isHitEase = function(e) { return hitEases.indexOf(e) >= 0; };
 
   var days = bday ? gD(bday) : 0;
   var prof = days ? gP(days) : null;
@@ -142,13 +146,13 @@ function AnalysisScreenInner() {
   var slotLabels = [t('analysis.morning'),t('analysis.midday'),t('analysis.afternoon')];
   var slotKeys = ['morning','midday','afternoon'];
 
-  // ═══ 깨시 적중률 (5to15만 카운트) ═══
-  // 이번주 / 지난주 비교 — 5-15분 sweet spot 비율 추세
+  // ═══ 깨시 적중률 (5to15 기본, selfSleep 켜져있으면 under5도 적중) ═══
+  // 이번주 / 지난주 비교 — sweet spot 비율 추세
   var thisWeekEase = weekSleep.filter(function(l){return l.ease && !l.micro;});
-  var thisWeekHit = thisWeekEase.filter(function(l){return l.ease === '5to15';}).length;
+  var thisWeekHit = thisWeekEase.filter(function(l){return isHitEase(l.ease);}).length;
   var thisWeekHitPct = thisWeekEase.length > 0 ? Math.round(thisWeekHit / thisWeekEase.length * 100) : null;
   var prevWeekEase = prevWeek.filter(function(l){return l.ease && !l.micro;});
-  var prevWeekHit = prevWeekEase.filter(function(l){return l.ease === '5to15';}).length;
+  var prevWeekHit = prevWeekEase.filter(function(l){return isHitEase(l.ease);}).length;
   var prevWeekHitPct = prevWeekEase.length > 0 ? Math.round(prevWeekHit / prevWeekEase.length * 100) : null;
   var hitTier = function(p) {
     if (p === null) return { color: 'rgba(200,215,255,0.4)', label: lang==='ko'?'데이터 부족':'no data' };
@@ -292,11 +296,13 @@ function AnalysisScreenInner() {
         );
       })()}
 
-      {/* ═══ 깨시 적중률 (5to15분) ═══ */}
+      {/* ═══ 깨시 적중률 ═══ */}
       {thisWeekHitPct !== null && thisWeekEase.length >= 3 && <View style={s.card}>
         <Text style={s.sectionTitle}>{lang==='ko'?'🎯 깨시 적중률':'🎯 Wake window accuracy'}</Text>
         <Text style={{color:'rgba(200,215,255,0.45)',fontSize:13,lineHeight:20,textAlign:'center',marginBottom:14}}>
-          {lang==='ko'?'잠드는데 5~15분 걸린 비율 (sweet spot)':'% of sleeps with 5-15 min onset (sweet spot)'}
+          {selfSleep
+            ? (lang==='ko'?'잠드는데 15분 이내로 걸린 비율 (혼자 잠드는 아기)':'% of sleeps under 15 min onset (self-soother)')
+            : (lang==='ko'?'잠드는데 5~15분 걸린 비율 (sweet spot)':'% of sleeps with 5-15 min onset (sweet spot)')}
         </Text>
         <View style={{flexDirection:'row',gap:10,marginBottom:10}}>
           <View style={[s.statBox,{backgroundColor:thisTier.color+'15',borderWidth:1,borderColor:thisTier.color+'30'}]}>
@@ -317,7 +323,9 @@ function AnalysisScreenInner() {
           </View>}
         </View>
         <Text style={{color:'rgba(200,215,255,0.5)',fontSize:13,lineHeight:20,textAlign:'center'}}>
-          {lang==='ko'?'5분 미만은 과피로, 15분 초과는 깨시가 어긋난 신호예요':'Under 5min = overtired, over 15min = WW miss'}
+          {selfSleep
+            ? (lang==='ko'?'15분 초과는 깨시가 어긋난 신호예요':'Over 15 min = WW miss')
+            : (lang==='ko'?'5분 미만은 과피로, 15분 초과는 깨시가 어긋난 신호예요':'Under 5 min = overtired, over 15 min = WW miss')}
         </Text>
       </View>}
 
@@ -373,7 +381,8 @@ function AnalysisScreenInner() {
             var k=dow+'-'+slot;
             if(!grid[k])grid[k]={easy:0,hard:0,total:0};
             grid[k].total++;
-            if(l.ease==='easy'||l.ease==='under5'||l.ease==='5to15')grid[k].easy++;
+            // selfSleep 켜진 아기는 under5도 쉽게 잠든 것으로 카운트
+            if(isHitEase(l.ease)||l.ease==='easy')grid[k].easy++;
             if(l.ease==='hard'||l.ease==='over30')grid[k].hard++;
           });
           var dayNames = t('c.days').split(',');

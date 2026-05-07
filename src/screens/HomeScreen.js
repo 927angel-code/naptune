@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput, Keyboa
 import { useApp } from '../context/AppContext';
 import { useLang } from '../context/LangContext';
 import { gD, fD, fT, fM, uid } from '../utils/helpers';
-import { isNightSleep, getWWRange, gP, getPerNapCap, getLastNapRec, getLateNapCutoffMin } from '../utils/sleep';
+import { isNightSleep, getWWRange, gP, getPerNapCap, getLastNapRec, getLateNapCutoffMin, anaNapDur, predictDaySchedule } from '../utils/sleep';
 import { COLORS } from '../utils/constants';
 import { SV, LD } from '../utils/storage';
 import ScheduleArc from '../components/ScheduleArc';
@@ -175,9 +175,11 @@ export default function HomeScreen() {
     );
   }
 
-  // ═══ Wake window range (Huckleberry, by month) ═══
+  // ═══ Wake window range (WW v2 — Huckleberry 보간) ═══
+  // 1회 낮잠 아기는 WW 표시 안 함 (변동성 큼).
   var days = bday ? gD(bday) : 0;
-  var wwRange = days ? getWWRange(days) : null;
+  var profForWW = days ? gP(days) : null;
+  var wwRange = (days >= 90 && profForWW && profForWW.n > 1) ? getWWRange(days) : null;
   var months = Math.floor(days / 30);
   var ageLabel = lang === 'ko' ? months + '개월' : months + 'mo';
 
@@ -192,19 +194,39 @@ export default function HomeScreen() {
   var bedMin = bH * 60 + bM2;
   var arcBedTs = todayMs + bedMin * 60000;
   if (arcBedTs <= arcWakeTs) arcBedTs = arcWakeTs + 12 * 3600000;
+  // 실제 밤잠이 기록/진행중이면 그 시각 사용 (설정 목표 시각 대신)
+  var todayEveningSleep = sl.filter(function(l){
+    if (l.start < todayMs || l.start >= todayMs + 24*3600000) return false;
+    var h = new Date(l.start).getHours();
+    return h >= 17 && h < 24;
+  }).sort(function(a,b){return a.start - b.start;})[0];
+  if (todayEveningSleep) {
+    arcBedTs = todayEveningSleep.start;
+  } else if (asleep && sS) {
+    var sH = new Date(sS).getHours();
+    if (sH >= 17 && sS >= todayMs) arcBedTs = sS;
+  }
   var todayNapsForArc = sl.filter(function(l){
     return l.end && l.start >= todayMs && !isNightSleep(l) && !l.micro;
   }).sort(function(a,b){return a.start - b.start;});
-  var arcSlots = todayNapsForArc.map(function(n, i) {
-    var dur = Math.round((n.end - n.start) / 60000);
-    return {
-      start: n.start,
-      end: n.end,
-      predDur: dur,
-      isCatnap: false,
-      lastNap: i === todayNapsForArc.length - 1 && dur < 50
-    };
-  });
+
+  // ═══ WW v2 — 하루 스케줄 예측 (forward from wake) ═══
+  // 기록된 낮잠은 그대로, 미진행분은 WW 배열로 forward 계산.
+  // 1회 낮잠은 wwArr null → 빈 slots (예측 안 함, ScheduleArc는 wake-bed 직선)
+  var napDurAvg = anaNapDur(sl);
+  var sched = profForWW ? predictDaySchedule({
+    wakeTs: arcWakeTs,
+    days: days,
+    napCount: profForWW.n,
+    recordedNaps: todayNapsForArc,
+    napDurAvg: napDurAvg,
+    napDurDefault: profForWW.nd
+  }) : { slots: [], predBedTs: 0 };
+  var arcSlots = sched.slots;
+  // 실제 밤잠 기록 없고 예측치가 있으면 예측 취침시각으로 arc 종료점 갱신
+  if (!todayEveningSleep && !(asleep && sS && new Date(sS).getHours() >= 17 && sS >= todayMs) && sched.predBedTs) {
+    arcBedTs = sched.predBedTs;
+  }
 
   // ═══ Static counters for coach (no prediction) ═══
   var prof = days ? gP(days) : null;
@@ -409,6 +431,20 @@ export default function HomeScreen() {
         </View> : null}
       </View> : null}
 
+      {/* ═══ Night wakes modal (Coach Card 직후) ═══ */}
+      {pendingStop && <View style={[s.card,{backgroundColor:'rgba(154,140,240,0.12)',borderColor:'rgba(154,140,240,0.35)'}]}>
+        <Text style={{color:'#e0d4ff',fontWeight:'900',fontSize:19,textAlign:'center',marginBottom:6,lineHeight:28}}>{t('home.nightWakes.title')}</Text>
+        <Text style={{color:'rgba(200,215,255,0.45)',fontSize:15,textAlign:'center',marginBottom:12,lineHeight:24}}>{fD(pendingStop.end-pendingStop.start)+' — '+t('home.nightWakes.desc')}</Text>
+        <View style={{flexDirection:'row',gap:6}}>
+          {[0,1,2,3,4].map(function(n2){return(
+            <TouchableOpacity key={n2} onPress={function(){saveNightWakes(n2);}} style={{flex:1,padding:14,borderRadius:14,borderWidth:1.5,borderColor:'rgba(154,140,240,0.3)',backgroundColor:'rgba(154,140,240,0.08)',alignItems:'center'}}>
+              <Text style={{color:'#e0d4ff',fontWeight:'900',fontSize:19}}>{n2}</Text>
+              <Text style={{color:'rgba(200,215,255,0.45)',fontSize:15}}>{n2===0?t('home.nightWakes.never'):t('home.nightWakes.times')}</Text>
+            </TouchableOpacity>
+          );})}
+        </View>
+      </View>}
+
       {/* ═══ Sleep / Wake card ═══ */}
       <View style={s.card}>
         {!asleep ? (<View>
@@ -465,25 +501,12 @@ export default function HomeScreen() {
       <ScheduleArc
         wakeTs={arcWakeTs}
         bedTs={arcBedTs}
+        bedPredicted={!todayEveningSleep && !(asleep && sS && new Date(sS).getHours() >= 17 && sS >= todayMs)}
         slots={arcSlots}
         name={name}
         ageLabel={ageLabel}
         lang={lang}
       />
-
-      {/* ═══ Night wakes modal ═══ */}
-      {pendingStop && <View style={[s.card,{backgroundColor:'rgba(154,140,240,0.12)',borderColor:'rgba(154,140,240,0.35)'}]}>
-        <Text style={{color:'#e0d4ff',fontWeight:'900',fontSize:19,textAlign:'center',marginBottom:6,lineHeight:28}}>{t('home.nightWakes.title')}</Text>
-        <Text style={{color:'rgba(200,215,255,0.45)',fontSize:15,textAlign:'center',marginBottom:12,lineHeight:24}}>{fD(pendingStop.end-pendingStop.start)+' — '+t('home.nightWakes.desc')}</Text>
-        <View style={{flexDirection:'row',gap:6}}>
-          {[0,1,2,3,4].map(function(n2){return(
-            <TouchableOpacity key={n2} onPress={function(){saveNightWakes(n2);}} style={{flex:1,padding:14,borderRadius:14,borderWidth:1.5,borderColor:'rgba(154,140,240,0.3)',backgroundColor:'rgba(154,140,240,0.08)',alignItems:'center'}}>
-              <Text style={{color:'#e0d4ff',fontWeight:'900',fontSize:19}}>{n2}</Text>
-              <Text style={{color:'rgba(200,215,255,0.45)',fontSize:15}}>{n2===0?t('home.nightWakes.never'):t('home.nightWakes.times')}</Text>
-            </TouchableOpacity>
-          );})}
-        </View>
-      </View>}
 
       <View style={{height:20}}/>
     </ScrollView>
