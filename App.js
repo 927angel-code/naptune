@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, StatusBar, Platform, Modal, TextInput, Alert, ScrollView, Dimensions, Keyboard, Image, Linking, Share } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { AppProvider, useApp } from './src/context/AppContext';
@@ -32,10 +32,22 @@ function AppContent() {
   var lW = appCtx.lW, setLW = appCtx.setLW;
   var selfSleep = appCtx.selfSleep, setSelfSleep = appCtx.setSelfSleep;
   var stSiri = useState(false); var siriOpen = stSiri[0]; var setSiriOpen = stSiri[1];
+  var appCtxRef = useRef(appCtx);
+  var feedsRef = useRef(feeds);
+  var langRef = useRef(lang);
+  var tRef = useRef(t);
+  appCtxRef.current = appCtx;
+  feedsRef.current = feeds;
+  langRef.current = lang;
+  tRef.current = t;
 
   // ═══ Siri Shortcuts / Deep Link Handler ═══
   var handleDeepLink = function(url) {
     if (!url) return;
+    var app = appCtxRef.current;
+    var latestFeeds = feedsRef.current || [];
+    var currentLang = langRef.current;
+    var tr = tRef.current;
     var stripped = url.replace(/^naptune:\/\//, '');
     var parts = stripped.split('?');
     var path = parts[0] || '';
@@ -44,86 +56,98 @@ function AppContent() {
     var now = Date.now();
 
     if (path === 'left' || path === 'right') {
-      appCtx.setFSide(path === 'left' ? 'left' : 'right');
-      appCtx.setFStart(now);
-      appCtx.setFEl(0);
-      appCtx.setFTab('breast');
+      app.setFSide(path === 'left' ? 'left' : 'right');
+      app.setFStart(now);
+      app.setFEl(0);
+      app.setFTab('breast');
       setTab('feed');
-      show(path === 'left' ? '🤱 ' + t('c.left') : '🤱 ' + t('c.right'), '#f0a8c9');
+      show(path === 'left' ? '🤱 ' + tr('c.left') : '🤱 ' + tr('c.right'), '#f0a8c9');
     }
     else if (path === 'feed-stop') {
-      if (appCtx.fStart && appCtx.fSide) {
-        var dur = now - appCtx.fStart;
-        var side = appCtx.fSide === 'left' ? '\uC67C\uCABD' : '\uC624\uB978\uCABD';
-        if (lang !== 'ko') side = appCtx.fSide;
-        setFeeds(function(p) { return [{ id: uid(), ts: appCtx.fStart, type: '\uBAA8\uC720', side: side, dur: dur }].concat(p).slice(0, 500); });
-        appCtx.setFSide(null);
-        appCtx.setFStart(null);
-        appCtx.setFEl(0);
+      if (app.fStart && app.fSide && app.fTab === 'breast') {
+        var dur = now - app.fStart;
+        var side = app.fSide === 'left' ? '\uC67C\uCABD' : '\uC624\uB978\uCABD';
+        if (currentLang !== 'ko') side = app.fSide;
+        setFeeds(function(p) { return [{ id: uid(), ts: app.fStart, type: '\uBAA8\uC720', side: side, dur: dur }].concat(p).slice(0, 500); });
+        app.setFSide(null);
+        app.setFStart(null);
+        app.setFEl(0);
         show('🤱 ' + fD(dur), '#f0a8c9');
+      } else {
+        show('⚠️ ' + (currentLang === 'ko' ? '수유 타이머가 시작되지 않았어요' : 'No active feed timer'), '#f0cd8a');
       }
     }
     else if (path === 'quick-feed') {
       // Fix Z (v54u): 정렬 후 선택 — LogScreen 편집 후에도 진짜 최근 수유의 side 사용
-      var lastFeed = feeds.slice().sort(function(a,b){return b.ts-a.ts;}).find(function(f) { return f.type === '\uBAA8\uC720'; });
-      var qSide = lastFeed ? lastFeed.side : '\uC67C\uCABD';
-      setFeeds(function(p) { return [{ id: uid(), ts: now, type: '\uBAA8\uC720', side: qSide, dur: null }].concat(p).sort(function(a,b){return b.ts-a.ts;}).slice(0, 500); });
-      show('🤱 ' + t('feed.quickRecord'), '#f0a8c9');
+      // \uBE60\uB978 \uAE30\uB85D\uC740 side \uBBF8\uC9C0\uC815 (\uC67C\uCABD/\uC624\uB978\uCABD \uD45C\uC2DC \uC548 \uD568)
+      setFeeds(function(p) { return [{ id: uid(), ts: now, type: '\uBAA8\uC720', side: null, dur: null }].concat(p).sort(function(a,b){return b.ts-a.ts;}).slice(0, 500); });
+      show('🤱 ' + tr('feed.quickRecord'), '#f0a8c9');
     }
     else if (path === 'bottle') {
       var ml = params.ml ? +params.ml : 0;
       if (!ml) {
         // Fix Z (v54u): 정렬 후 선택
-        var lastBottle = feeds.slice().sort(function(a,b){return b.ts-a.ts;}).find(function(f) { return f.type === '\uBD84\uC720'; });
+        var lastBottle = latestFeeds.slice().sort(function(a,b){return b.ts-a.ts;}).find(function(f) { return f.type === '\uBD84\uC720'; });
         ml = lastBottle ? lastBottle.ml : 0;
       }
       if (ml > 0) {
         setFeeds(function(p) { return [{ id: uid(), ts: now, type: '\uBD84\uC720', ml: ml }].concat(p).sort(function(a,b){return b.ts-a.ts;}).slice(0, 500); });
         show('\uD83C\uDF7C ' + ml + 'ml', '#f0cd8a');
+      } else {
+        show('\u26A0\uFE0F ' + (currentLang === 'ko' ? '\uC774\uC804 \uBD84\uC720 \uAE30\uB85D\uC774 \uC5C6\uC5B4\uC694. ml\uC744 \uC9C0\uC815\uD574\uC8FC\uC138\uC694' : 'No previous bottle. Specify ml'), '#f0cd8a');
       }
     }
     else if (path === 'sleep') {
-      if (!appCtx.asleep) {
-        appCtx.setAsleep(true);
-        appCtx.setSS(now);
-        show('\uD83D\uDE34 ' + t('home.sleeping'), COLORS.purpleLight);
+      if (!app.asleep) {
+        app.setAsleep(true);
+        app.setSS(now);
+        app.setSleepEase('5to15');
+        show('\uD83D\uDE34 ' + tr('home.sleeping'), COLORS.purpleLight);
+      } else {
+        show('\uD83D\uDE34 ' + (currentLang === 'ko' ? '\uC774\uBBF8 \uC790\uACE0 \uC788\uC5B4\uC694' : 'Already asleep'), COLORS.purpleLight);
       }
     }
     else if (path === 'wake') {
-      if (appCtx.asleep && appCtx.sS) {
-        var dur2 = now - appCtx.sS;
+      if (app.asleep && app.sS) {
+        var dur2 = now - app.sS;
         if (dur2 > 60000) {
-          var entry = { id: uid(), start: appCtx.sS, end: now, ease: '5to15' };
+          var entry = { id: uid(), start: app.sS, end: now, ease: app.sleepEase || '5to15' };
           // Fix V (v54n): 즉시 저장
-          setSl(function(p) { var newSl=[entry].concat(p).slice(0, 300); SV('sl',newSl); return newSl; });
+          setSl(function(p) { return [entry].concat(p).slice(0, 300); });
           show('\u2600\uFE0F ' + fD(dur2), COLORS.purpleLight);
         }
-        appCtx.setAsleep(false);
-        appCtx.setSS(null);
+        app.setAsleep(false);
+        app.setSS(null);
+        app.setSleepEase(null);
         setLW(now);
+      } else {
+        // 수면 상태가 아닐 때 "깼어" → 아무것도 안 함, 토스트만
+        show('☀️ ' + (currentLang === 'ko' ? '이미 깨어있어요' : 'Already awake'), COLORS.purpleLight);
       }
     }
     else if (path === 'micro') {
       // Fix V (v54n): 즉시 저장
-      setSl(function(p) { var newSl=[{ id: uid(), start: now - 15 * 60000, end: now, ease: 'micro', micro: true }].concat(p).slice(0, 300); SV('sl',newSl); return newSl; });
-      show('\uD83D\uDE97 15' + t('c.min'), '#60a5fa');
+      setSl(function(p) { return [{ id: uid(), start: now - 15 * 60000, end: now, ease: 'micro', micro: true }].concat(p).slice(0, 300); });
+      show('\uD83D\uDE97 15' + tr('c.min'), '#60a5fa');
     }
     else if (path === 'pump') {
-      appCtx.setFSide('both');
-      appCtx.setFStart(now);
-      appCtx.setFEl(0);
-      appCtx.setFTab('pump');
+      app.setFSide('both');
+      app.setFStart(now);
+      app.setFEl(0);
+      app.setFTab('pump');
       setTab('feed');
-      show('\uD83E\uDD5B ' + t('feed.pumpingBoth'), '#8ad4f0');
+      show('\uD83E\uDD5B ' + tr('feed.pumpingBoth'), '#8ad4f0');
     }
     else if (path === 'pump-stop') {
-      if (appCtx.fStart && appCtx.fTab === 'pump') {
-        var pDur = now - appCtx.fStart;
-        setFeeds(function(p) { return [{ id: uid(), ts: appCtx.fStart, type: '\uC720\uCD95', dur: pDur, lml: 0, rml: 0 }].concat(p).slice(0, 500); });
-        appCtx.setFSide(null);
-        appCtx.setFStart(null);
-        appCtx.setFEl(0);
+      if (app.fStart && app.fTab === 'pump') {
+        var pDur = now - app.fStart;
+        setFeeds(function(p) { return [{ id: uid(), ts: app.fStart, type: '\uC720\uCD95', dur: pDur, lml: 0, rml: 0 }].concat(p).slice(0, 500); });
+        app.setFSide(null);
+        app.setFStart(null);
+        app.setFEl(0);
         show('\uD83E\uDD5B ' + fD(pDur), '#8ad4f0');
+      } else {
+        show('\u26A0\uFE0F ' + (currentLang === 'ko' ? '\uC720\uCD95 \uD0C0\uC774\uBA38\uAC00 \uC2DC\uC791\uB418\uC9C0 \uC54A\uC558\uC5B4\uC694' : 'No active pump timer'), '#f0cd8a');
       }
     }
   };
@@ -176,13 +200,15 @@ function AppContent() {
       </View>
     );
 
-    var nightCutoff = Date.now() - 24 * 3600000;
     // Fix Z (v54u): 정렬 후 선택
+    // 어젯밤: end가 24시간 이내인 가장 최근 night sleep (start 기준이 아니라 end 기준)
+    var endCutoff = Date.now() - 24 * 3600000;
     var nightSleep = sl.slice().sort(function(a,b){return b.start-a.start;}).find(function(l2) {
       if (!l2.end) return false;
-      if (l2.start < nightCutoff) return false;
+      if (l2.end < endCutoff) return false;
       var h = new Date(l2.start).getHours();
-      return h >= 18 || h < 6;
+      // 17시 이후 또는 6시 이전 시작이면 night으로 인정 (이른 취침 케이스 포함)
+      return h >= 17 || h < 6;
     });
 
     var today2 = new Date();
@@ -472,6 +498,12 @@ function AppContent() {
                 </TouchableOpacity>
 
                 <TouchableOpacity onPress={function() {
+                  Linking.openURL('mailto:naptune.app@gmail.com?subject=Naptune%20%E2%80%94%20Support');
+                }} style={styles.settingsExport}>
+                  <Text style={{ color: 'rgba(200,215,255,0.6)', fontWeight: '700', fontSize: 15 }}>{t('app.contact')}</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity onPress={function() {
                   Alert.alert(t('app.deleteConfirm'), t('app.deleteWarn'), [
                     { text: t('app.deleteCancel'), style: 'cancel' },
                     { text: t('app.deleteOk'), style: 'destructive', onPress: function() { setSl([]); setFeeds([]); setLW(null); show(t('app.deleteDone'), '#f87171'); setShowSettings(false); } },
@@ -589,4 +621,3 @@ var styles = StyleSheet.create({
   ghStatV: {fontWeight:'900',fontSize:19,marginTop:3,lineHeight:28,textAlign:'center'},
   toastText: { fontSize: 15, fontWeight: '700' },
 });
-

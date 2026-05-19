@@ -50,18 +50,22 @@ export const isNightSleep = (log) => {
 // 일수(days) 기준 wake window {min, max} (분).
 // 앵커 사이는 선형 보간, 범위 밖은 가장 가까운 앵커 값 사용.
 export const HB_WW = [
-  { days: 90,  min: 60,  max: 120 },
-  { days: 120, min: 90,  max: 150 },
-  { days: 150, min: 120, max: 180 },
-  { days: 180, min: 120, max: 180 },
-  { days: 210, min: 135, max: 210 },
-  { days: 240, min: 135, max: 210 },
-  { days: 270, min: 165, max: 210 },
-  { days: 300, min: 180, max: 225 },
-  { days: 330, min: 180, max: 225 },
-  { days: 360, min: 195, max: 240 },
-  { days: 420, min: 195, max: 240 },
-  { days: 480, min: 195, max: 240 }
+  { days: 90,  min: 60,  max: 120 },   // 3mo
+  { days: 120, min: 90,  max: 150 },   // 4mo
+  { days: 150, min: 120, max: 180 },   // 5mo
+  { days: 180, min: 120, max: 180 },   // 6mo
+  { days: 210, min: 135, max: 210 },   // 7mo
+  { days: 240, min: 135, max: 210 },   // 8mo
+  { days: 270, min: 165, max: 210 },   // 9mo
+  { days: 300, min: 180, max: 225 },   // 10mo
+  { days: 330, min: 180, max: 225 },   // 11mo
+  { days: 360, min: 195, max: 240 },   // 12mo
+  { days: 420, min: 195, max: 300 },   // 14mo (1-2nap transition)
+  { days: 480, min: 195, max: 300 },   // 16mo (1-2nap transition)
+  { days: 540, min: 300, max: 330 },   // 18mo (1nap)
+  { days: 600, min: 300, max: 345 },   // 20mo (1nap)
+  { days: 660, min: 315, max: 345 },   // 22mo (1nap)
+  { days: 720, min: 330, max: 360 }    // 24mo (1nap)
 ];
 
 // WW v2 — Huckleberry 테이블에서 선형 보간으로 {min, max} 반환.
@@ -95,15 +99,16 @@ export const getWWRange = (days) => {
 
 // WW v2 — 낮잠 N회 기준 슬롯별 WW 배열 (선형 증가).
 // 슬롯 수 = napCount + 1 (i=0 첫 깨시 ~ i=napCount 취침 전 깨시).
-// 1회 낮잠 또는 napCount<2 → null 반환 (UI에서 WW 섹션 숨김).
+// 1낮잠도 [min, max] 두 슬롯으로 반환. napCount<1만 null.
 //
 // 공식: step = (max - min) / napCount
 //       wws[i] = Math.round(min + step * i)
 //       → 항상 min으로 시작, 균등 증가, max로 끝남
 //
 // 예시 (210일, napCount=3): step=25 → [135, 160, 185, 210]
+// 예시 (540일, napCount=1): step=30 → [300, 330]
 export const getWWArray = (days, napCount) => {
-  if (!napCount || napCount < 2) return null;
+  if (!napCount || napCount < 1) return null;
   const r = getHbWW(days);
   const min = r.min;
   const max = r.max;
@@ -272,7 +277,41 @@ export const anaNapDur = (sl) => {
     result[pos] = Math.round(sum / arr.length);
   });
 
+  // 표시용 메타 — 평균 산출에 사용된 고유 날짜 수 (예측에 영향 X)
+  Object.defineProperty(result, '_days', { value: Object.keys(byDay).length, enumerable: false });
   return result;
+};
+
+// 최근 N일 실제 낮잠 횟수 평균 → 적응형 낮잠 개수
+// 데이터 부족(< 3일)이면 default 사용. 그 외엔 평균 반올림 + clamp.
+export const anaActualNapCount = (sl, defaultN) => {
+  if (!Array.isArray(sl) || sl.length === 0) return defaultN;
+  const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+  const todayMs = today0.getTime();
+  const cutoff = todayMs - 7 * 86400000;
+  const byDay = {};
+  for (let i = 0; i < sl.length; i++) {
+    const l = sl[i];
+    if (!l.end) continue;
+    if (l.start < cutoff || l.start >= todayMs) continue; // 오늘 제외
+    if (l.micro) continue;
+    const h = new Date(l.start).getHours();
+    if (h >= 18 || h < 6) continue; // 밤잠 제외
+    const dur = Math.floor((l.end - l.start) / 60000);
+    if (dur < 25) continue; // 너무 짧으면 catnap이라도 카운트 (25분+)
+    const d = new Date(l.start);
+    const key = d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
+    byDay[key] = (byDay[key] || 0) + 1;
+  }
+  const days = Object.keys(byDay);
+  if (days.length < 3) return defaultN;
+  let sum = 0;
+  for (let k = 0; k < days.length; k++) sum += byDay[days[k]];
+  const avg = sum / days.length;
+  // 실제 평균이 default와 1 이상 차이날 때만 적용 (잡음 방지)
+  if (avg < defaultN - 0.6) return Math.max(1, Math.round(avg));
+  if (avg > defaultN + 0.6) return Math.min(5, Math.round(avg));
+  return defaultN;
 };
 
 // WW v2 — 하루 스케줄 예측 (forward from wake).

@@ -4,7 +4,6 @@ import { useApp } from '../context/AppContext';
 import { useLang } from '../context/LangContext';
 import { fD, fT, fSec, uid } from '../utils/helpers';
 import { COLORS } from '../utils/constants';
-import { SV } from '../utils/storage';
 
 export default function FeedScreen() {
   var ctx = useLang();
@@ -124,21 +123,19 @@ export default function FeedScreen() {
   var countFirst = first3.reduce(function(a,dd){return a+dd.totalCount;},0);
   var countLast = last3.reduce(function(a,dd){return a+dd.totalCount;},0);
 
-  // Fix V (v54n): 수유 기록 즉시 저장 (race condition 방지)
-  var onFailFd = function() { show(lang === 'ko' ? '⚠️ 저장 실패' : '⚠️ Save failed', '#f87171'); };
   var startFeed = function(side) { setFSide(side); setFStart(Date.now()); setFEl(0); };
   var switchSide = function() { var next = fSide === '왼쪽' ? '오른쪽' : '왼쪽'; stopFeed(); startFeed(next); };
   var stopFeed = function() {
     if (!fSide) return;
     var dur = Date.now() - fStart;
     var nextSide = fSide === '왼쪽' ? '오른쪽' : '왼쪽';
-    setFeeds(function(p){var newFd=[{id:uid(),ts:fStart,type:'모유',side:fSide,dur:dur}].concat(p).slice(0,300); SV('feeds',newFd,onFailFd); return newFd;});
+    setFeeds(function(p){return [{id:uid(),ts:fStart,type:'모유',side:fSide,dur:dur}].concat(p).slice(0,300);});
     show('🤱 '+sideLabel(fSide)+' '+fD(dur)+' → '+sideLabel(nextSide), COLORS.pink);
     setFSide(null); setFStart(null); setFEl(0);
   };
-  var quickBreast = function() { setFeeds(function(p){var newFd=[{id:uid(),ts:Date.now(),type:'모유',side:'빠른기록',dur:null}].concat(p).slice(0,300); SV('feeds',newFd,onFailFd); return newFd;}); show(t('feed.quickRecord'), COLORS.pink); };
-  var recBottle = function(ml) { if(!ml)return; setFeeds(function(p){var newFd=[{id:uid(),ts:Date.now(),type:'분유',ml:+ml}].concat(p).slice(0,300); SV('feeds',newFd,onFailFd); return newFd;}); show('🍼 '+ml+'ml', COLORS.yellow); setBoAmt(''); };
-  var recEBM = function(ml) { if(!ml)return; setFeeds(function(p){var newFd=[{id:uid(),ts:Date.now(),type:'유축수유',ml:+ml}].concat(p).slice(0,300); SV('feeds',newFd,onFailFd); return newFd;}); show('🍼 '+ml+'ml', COLORS.purple); setEbAmt(''); };
+  var quickBreast = function() { setFeeds(function(p){return [{id:uid(),ts:Date.now(),type:'모유',side:'빠른기록',dur:null}].concat(p).slice(0,300);}); show(t('feed.quickRecord'), COLORS.pink); };
+  var recBottle = function(ml) { if(!ml)return; setFeeds(function(p){return [{id:uid(),ts:Date.now(),type:'분유',ml:+ml}].concat(p).slice(0,300);}); show('🍼 '+ml+'ml', COLORS.yellow); setBoAmt(''); };
+  var recEBM = function(ml) { if(!ml)return; setFeeds(function(p){return [{id:uid(),ts:Date.now(),type:'유축수유',ml:+ml}].concat(p).slice(0,300);}); show('🍼 '+ml+'ml', COLORS.purple); setEbAmt(''); };
   var startPump = function(mode) { setPumpMode(mode); setPumpStart(Date.now()); setPumpEl(0); setPumpLml(''); setPumpRml(''); };
   var switchPump = function() {
     if (!pumpStart || pumpMode === '양쪽') return;
@@ -146,14 +143,14 @@ export default function FeedScreen() {
     var next = pumpMode === '왼쪽' ? '오른쪽' : '왼쪽';
     var lml = pumpMode === '왼쪽' ? +pumpLml || 0 : 0;
     var rml = pumpMode === '오른쪽' ? +pumpRml || 0 : 0;
-    setFeeds(function(p){var newFd=[{id:uid(),ts:pumpStart,type:'유축',dur:dur,lml:lml,rml:rml,mode:pumpMode}].concat(p).slice(0,300); SV('feeds',newFd,onFailFd); return newFd;});
+    setFeeds(function(p){return [{id:uid(),ts:pumpStart,type:'유축',dur:dur,lml:lml,rml:rml,mode:pumpMode}].concat(p).slice(0,300);});
     show('🥛 '+sideLabel(pumpMode)+' '+fD(dur)+' → '+sideLabel(next), '#8ad4f0');
     setPumpMode(next); setPumpStart(Date.now()); setPumpEl(0); setPumpLml(''); setPumpRml('');
   };
   var stopPump = function() {
     if (!pumpStart) return;
     var dur = Date.now() - pumpStart;
-    setFeeds(function(p){var newFd=[{id:uid(),ts:pumpStart,type:'유축',dur:dur,lml:+pumpLml||0,rml:+pumpRml||0,mode:pumpMode}].concat(p).slice(0,300); SV('feeds',newFd,onFailFd); return newFd;});
+    setFeeds(function(p){return [{id:uid(),ts:pumpStart,type:'유축',dur:dur,lml:+pumpLml||0,rml:+pumpRml||0,mode:pumpMode}].concat(p).slice(0,300);});
     show('🥛 '+fD(dur), '#8ad4f0');
     setPumpStart(null); setPumpEl(0); setPumpMode(null); setPumpLml(''); setPumpRml('');
   };
@@ -547,7 +544,7 @@ export default function FeedScreen() {
           </View>}
         </View>}
 
-        <View style={{height:20}}/>
+        <View style={{height:100}}/>
       </ScrollView>
     </TouchableWithoutFeedback>
   );
@@ -560,4 +557,3 @@ var s = StyleSheet.create({
   mlInput:{backgroundColor:'rgba(255,255,255,0.07)',borderWidth:1.5,borderColor:'rgba(255,255,255,0.13)',borderRadius:14,padding:14,color:'#fff',fontSize:15,fontWeight:'700'},
   saveBtn:{padding:12,paddingHorizontal:20,borderRadius:14,backgroundColor:'#f0cd8a',alignItems:'center'},
 });
-

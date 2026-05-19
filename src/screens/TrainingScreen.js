@@ -197,6 +197,10 @@ export default function TrainingScreen() {
           ); })}
           <View style={s.progressBar}><View style={[s.progressFill, { width: (trainScore / 4 * 100) + '%' }]} /></View>
           <Text style={s.scoreText}>{trainScore + '/4 ' + t('train.lock.met')}</Text>
+          <TouchableOpacity onPress={function() { setBypass(true); }} style={{ marginTop: 18, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(200,215,255,0.18)', alignItems: 'center' }}>
+            <Text style={{ color: 'rgba(200,215,255,0.7)', fontWeight: '700', fontSize: 14 }}>{t('train.lock.startAnyway')}</Text>
+          </TouchableOpacity>
+          <Text style={{ color: 'rgba(200,215,255,0.35)', fontSize: 12, textAlign: 'center', marginTop: 8, lineHeight: 18 }}>{t('train.lock.startAnywayWarn')}</Text>
         </View>
       </ScrollView>
     );
@@ -438,12 +442,13 @@ export default function TrainingScreen() {
       {tStep === 2 && <View>
         <View style={[s.card, { backgroundColor: 'rgba(248,113,113,0.06)', borderColor: 'rgba(248,113,113,0.2)' }]}>
           <Text style={{ color: '#fca5a5', fontWeight: '900', fontSize: 19, marginBottom: 14 }}>{t('train.mustKnow')}</Text>
-          {[['\uD83D\uDCA5', t('train.mustKnow1_title'), t('train.mustKnow1_desc')], ['\uD83D\uDE34', t('train.mustKnow2_title'), t('train.mustKnow2_desc')], ['\u23F0', t('train.mustKnow3_title'), t('train.mustKnow3_desc')], ['\u2600\uFE0F', t('train.mustKnow4_title'), t('train.mustKnow4_desc')]].map(function(mk, i) { return (
-            <View key={i} style={{ flexDirection: 'row', gap: 14, paddingBottom: 14, marginBottom: 14, borderBottomWidth: i < 3 ? 1 : 0, borderBottomColor: 'rgba(248,113,113,0.1)' }}>
+          {[['\uD83D\uDCA5', t('train.mustKnow1_title'), t('train.mustKnow1_desc')], ['\uD83D\uDE34', t('train.mustKnow2_title'), t('train.mustKnow2_desc')], ['\u23F0', t('train.mustKnow3_title'), t('train.mustKnow3_desc')], ['\u2600\uFE0F', t('train.mustKnow4_title'), t('train.mustKnow4_desc')], ['\uD83C\uDF19', t('train.mustKnow5_title'), t('train.mustKnow5_desc')]].map(function(mk, i, arr) { return (
+            <View key={i} style={{ flexDirection: 'row', gap: 14, paddingBottom: 14, marginBottom: 14, borderBottomWidth: i < arr.length - 1 ? 1 : 0, borderBottomColor: 'rgba(248,113,113,0.1)' }}>
               <Text style={{ fontSize: 17 }}>{mk[0]}</Text>
               <View style={{ flex: 1 }}><Text style={{ color: '#fca5a5', fontWeight: '800', fontSize: 17, marginBottom: 2 }}>{mk[1]}</Text><Text style={{ color: 'rgba(200,215,255,0.55)', fontSize: 15, lineHeight: 25 }}>{mk[2]}</Text></View>
             </View>
           ); })}
+          <Text style={{ color: 'rgba(200,215,255,0.28)', fontSize: 12, lineHeight: 19 }}>{t('train.mustKnowSource')}</Text>
         </View>
         <View style={[s.card, { backgroundColor: 'rgba(240,205,138,0.05)', borderColor: 'rgba(240,205,138,0.15)' }]}>
           <Text style={{ color: '#fde68a', fontWeight: '900', fontSize: 19, marginBottom: 14 }}>{t('train.stop.title')}</Text>
@@ -750,4 +755,3 @@ var ts = StyleSheet.create({
   sleepBtn: { flex: 1, padding: 16, borderRadius: 16, borderWidth: 1.5, borderColor: COLORS.green + '40', backgroundColor: COLORS.green + '10', alignItems: 'center' },
   sleepBtnText: { color: COLORS.green, fontWeight: '700', fontSize: 15 },
 });
-

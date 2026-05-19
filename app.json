@@ -3,7 +3,7 @@
     "name": "Naptune",
     "slug": "naptune",
     "scheme": "naptune",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "runtimeVersion": {
       "policy": "sdkVersion"
     },
@@ -20,16 +20,11 @@
     ],
     "ios": {
       "bundleIdentifier": "com.naptune.app",
-      "buildNumber": "89",
+      "buildNumber": "99",
       "supportsTablet": false,
       "infoPlist": {
         "CFBundleDisplayName": "Naptune",
-        "CFBundleDevelopmentRegion": "ko",
-        "NSUserTrackingUsageDescription": "This is used to provide a better experience.",
-        "UIBackgroundModes": [
-          "fetch",
-          "remote-notification"
-        ]
+        "CFBundleDevelopmentRegion": "ko"
       },
       "config": {
         "usesNonExemptEncryption": false

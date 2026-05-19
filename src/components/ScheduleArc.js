@@ -4,8 +4,8 @@
 //
 // ES5/Hermes 호환: ?. ?? 미사용.
 
-import React from 'react';
-import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import React, { useRef } from 'react';
+import { View, Text, StyleSheet, Dimensions, PanResponder, TouchableOpacity } from 'react-native';
 import Svg, { Path, Circle, Defs, LinearGradient, Stop, Text as SvgText } from 'react-native-svg';
 import { fM } from '../utils/helpers';
 
@@ -16,6 +16,94 @@ function clock(ts) {
   return h + ':' + (m < 10 ? '0' + m : '' + m);
 }
 
+function createSchedulePanResponder(stateRef, dragRef) {
+  return PanResponder.create({
+    onStartShouldSetPanResponder: function(e) {
+      var st = stateRef.current;
+      if (!st || !st.pts) return false;
+      var tx = e.nativeEvent.locationX;
+      var ty = e.nativeEvent.locationY;
+      for (var k = 0; k < st.pts.length; k++) {
+        var p = st.pts[k];
+        if (p.kind === 'nap' && p.predicted) {
+          var ddx = p.x - tx;
+          var ddy = p.y - ty;
+          if (ddx * ddx + ddy * ddy <= 30 * 30) {
+            var prevP = k > 0 ? st.pts[k - 1] : null;
+            var prevPrevP = k > 1 ? st.pts[k - 2] : null;
+            var nextP = k < st.pts.length - 1 ? st.pts[k + 1] : null;
+            var nextNextP = k < st.pts.length - 2 ? st.pts[k + 2] : null;
+            var napDur = p.endTs - p.ts;
+            var prevWW = (prevP && prevPrevP) ? (prevP.ts - prevPrevP.endTs) : null;
+            var nextWW = (nextP && nextNextP) ? (nextNextP.ts - nextP.endTs) : null;
+            dragRef.current = {
+              slotIdx: p.slotIdx,
+              startTs: p.ts,
+              prevTs: prevP ? prevP.endTs : st.wakeTs,
+              nextTs: nextP ? nextP.ts : st.bedTs,
+              napDur: napDur,
+              prevWW: prevWW,
+              nextWW: nextWW,
+              lastTs: p.ts
+            };
+            return true;
+          }
+        }
+      }
+      return false;
+    },
+    onMoveShouldSetPanResponder: function() { return !!dragRef.current; },
+    onPanResponderMove: function(e, gs) {
+      var d = dragRef.current;
+      if (!d) return;
+      var st = stateRef.current;
+      if (!st || !st.pts) return;
+      var widthPx = st.W - 2 * st.PAD_X;
+      if (widthPx <= 0) return;
+      var dxMs = (gs.dx / widthPx) * st.totalMs;
+      var newTs = d.startTs + dxMs;
+      var snapMs = 5 * 60000;
+      var structuralMinTs = d.prevTs + 5 * 60000;
+      var structuralMaxTs = d.nextTs - d.napDur - 5 * 60000;
+      var minTs = structuralMinTs;
+      var maxTs = structuralMaxTs;
+      if (st.wwMinMs != null && st.wwMaxMs != null) {
+        var rangeMin = d.prevTs + st.wwMinMs;
+        var rangeMax = d.prevTs + st.wwMaxMs;
+        var limitedMin = rangeMin > minTs ? rangeMin : minTs;
+        var limitedMax = rangeMax < maxTs ? rangeMax : maxTs;
+        if (limitedMax >= limitedMin) {
+          minTs = limitedMin;
+          maxTs = limitedMax;
+        }
+      }
+      if (maxTs < minTs) return;
+      var progMin = minTs;
+      var progMax = maxTs;
+      if (d.prevWW != null) {
+        var leftMin = d.prevTs + d.prevWW + 60000;
+        if (leftMin > progMin) progMin = leftMin;
+      }
+      var rightMax = (d.nextTs - d.napDur + d.prevTs - 60000) / 2;
+      if (rightMax < progMax) progMax = rightMax;
+      if (d.nextWW != null) {
+        var nextMin = d.nextTs - d.napDur - d.nextWW + 60000;
+        if (nextMin > progMin) progMin = nextMin;
+      }
+      if (progMax >= progMin) { minTs = progMin; maxTs = progMax; }
+      newTs = Math.round(newTs / snapMs) * snapMs;
+      if (newTs < minTs) newTs = minTs;
+      if (newTs > maxTs) newTs = maxTs;
+      newTs = Math.round(newTs);
+      if (d.lastTs === newTs) return;
+      d.lastTs = newTs;
+      if (st.onDragNap) st.onDragNap(d.slotIdx, newTs);
+    },
+    onPanResponderRelease: function() { dragRef.current = null; },
+    onPanResponderTerminate: function() { dragRef.current = null; }
+  });
+}
+
 export default function ScheduleArc(props) {
   var slots = Array.isArray(props.slots) ? props.slots : [];
   var wakeTs = props.wakeTs;
@@ -23,6 +111,16 @@ export default function ScheduleArc(props) {
   var name = props.name || '';
   var ageLabel = props.ageLabel || '';
   var lang = props.lang || 'ko';
+  var onDragNap = props.onDragNap; // (slotIdx, newTs) => void
+  var napDurDays = typeof props.napDurDays === 'number' ? props.napDurDays : 0;
+  var onAgeLabelPress = props.onAgeLabelPress;
+  var wwMinMs = props.wwMinMs;
+  var wwMaxMs = props.wwMaxMs;
+  var stateRef = useRef({});
+  var dragRef = useRef(null);
+  var panResponderRef = useRef(null);
+  if (!panResponderRef.current) panResponderRef.current = createSchedulePanResponder(stateRef, dragRef);
+  var panResponder = panResponderRef.current;
 
   if (!wakeTs || !bedTs || bedTs <= wakeTs) return null;
 
@@ -74,7 +172,8 @@ export default function ScheduleArc(props) {
       color: isCat ? '#a78bfa' : '#f4a865',
       r: 8,
       kind: 'nap',
-      predicted: !!sl.predicted
+      predicted: !!sl.predicted,
+      slotIdx: i
     });
   }
   pts.push({
@@ -124,13 +223,23 @@ export default function ScheduleArc(props) {
     wwLabels.push({ x: centerX, y: labelY, text: fM(wwMin), color: col });
   }
 
+  // ─── Drag handling (낮잠 점만 가로 드래그) ───
+  stateRef.current = { pts: pts, W: W, PAD_X: PAD_X, totalMs: totalMs, wakeTs: wakeTs, bedTs: bedTs, onDragNap: onDragNap, wwMinMs: wwMinMs, wwMaxMs: wwMaxMs };
+
   return (
     <View style={s.card}>
       <View style={s.headerRow}>
         <Text style={s.title}>{lang === 'ko' ? '오늘의 스케줄 (예측)' : "Today's schedule (estimated)"}</Text>
-        <Text style={s.sub}>{name + (ageLabel ? ' · ' + ageLabel : '')}</Text>
+        {onAgeLabelPress ? (
+          <TouchableOpacity onPress={onAgeLabelPress} hitSlop={{top:8,bottom:8,left:8,right:8}}>
+            <Text style={s.sub}>{ageLabel || name}</Text>
+          </TouchableOpacity>
+        ) : (
+          <Text style={s.sub}>{ageLabel || name}</Text>
+        )}
       </View>
 
+      <View {...panResponder.panHandlers}>
       <Svg width={W} height={SVG_H} viewBox={'0 0 ' + W + ' ' + SVG_H}>
         <Defs>
           <LinearGradient id="napStroke" x1="0" y1="0" x2="1" y2="0">
@@ -200,6 +309,12 @@ export default function ScheduleArc(props) {
           );
         })}
       </Svg>
+      </View>
+      <Text style={s.footnote}>
+        {lang === 'ko'
+          ? (napDurDays === 0 ? '낮잠 시간 = 월령 평균' : napDurDays === 1 ? '낮잠 시간 = 어제 기록' : '낮잠 시간 = 최근 ' + napDurDays + '일 평균')
+          : (napDurDays === 0 ? 'Nap length = age-based avg' : napDurDays === 1 ? 'Nap length = yesterday' : 'Nap length = avg of last ' + napDurDays + ' days')}
+      </Text>
     </View>
   );
 }
@@ -208,5 +323,6 @@ var s = StyleSheet.create({
   card: { backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 20, padding: 22, marginBottom: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   title: { color: '#e0d4ff', fontSize: 17, fontWeight: '900' },
-  sub: { color: 'rgba(200,215,255,0.45)', fontSize: 13, fontWeight: '700' }
+  sub: { color: 'rgba(200,215,255,0.45)', fontSize: 13, fontWeight: '700' },
+  footnote: { color: 'rgba(200,215,255,0.35)', fontSize: 11, marginTop: 6, textAlign: 'center' }
 });

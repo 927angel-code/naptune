@@ -3,7 +3,6 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput, Modal,
 import { useApp } from '../context/AppContext';
 import { useLang } from '../context/LangContext';
 import { fD, fT, uid } from '../utils/helpers';
-import { SV } from '../utils/storage';
 
 export default function LogScreen() {
   var ctx = useLang();
@@ -45,11 +44,8 @@ export default function LogScreen() {
     return {id:'f'+f.ts+'_'+idx2, ts:f.ts, icon:icon, type:typeLabel(f.type), col:col, val:val, time:fT(f.ts), date:new Date(f.ts).toLocaleDateString(lang==='ko'?'ko-KR':'en-US',{month:'short',day:'numeric'}), raw:f, isSleep:false};
   })).sort(function(a,b){return b.ts - a.ts;});
 
-  // Fix V (v54n): log tab에서도 삭제/수정 즉시 저장.
-  var onFailSl = function() { show(lang === 'ko' ? '⚠️ 저장 실패' : '⚠️ Save failed', '#f87171'); };
-  var onFailFd = function() { show(lang === 'ko' ? '⚠️ 저장 실패' : '⚠️ Save failed', '#f87171'); };
-  var deleteSleep = function(raw) { setSl(function(p){var newSl=p.filter(function(l){return raw.id ? l.id !== raw.id : (l.start !== raw.start || l.end !== raw.end);}); SV('sl',newSl,onFailSl); return newSl;}); show(t('c.deleted'), '#f87171'); };
-  var deleteFeed = function(raw) { setFeeds(function(p){var newFd=p.filter(function(f){return raw.id ? f.id !== raw.id : (f.ts !== raw.ts || f.type !== raw.type);}); SV('feeds',newFd,onFailFd); return newFd;}); show(t('c.deleted'), '#f87171'); };
+  var deleteSleep = function(raw) { setSl(function(p){return p.filter(function(l){return raw.id ? l.id !== raw.id : (l.start !== raw.start || l.end !== raw.end);});}); show(t('c.deleted'), '#f87171'); };
+  var deleteFeed = function(raw) { setFeeds(function(p){return p.filter(function(f){return raw.id ? f.id !== raw.id : (f.ts !== raw.ts || f.type !== raw.type);});}); show(t('c.deleted'), '#f87171'); };
   var openEdit = function(r) {
     var ed = Object.assign({}, r.raw);
     if (!r.isSleep) ed._feedType = r.raw.type==='모유'?'breast':r.raw.type==='분유'?'bottle':r.raw.type==='유축'?'pump':'ebm';
@@ -93,30 +89,28 @@ export default function LogScreen() {
             </View>
           </View>
         );})}
-        <View style={{height:20}}/>
+        <View style={{height:100}}/>
       </ScrollView>
 
       <MAdd visible={shA} eL={edL} t={t} lang={lang} onSave={function(entry) {
         var isEdit = edL && edL._isEdit;
-        // Fix V (v54n): log 저장/수정 즉시 persist
-        var onFailLog = function() { show(lang === 'ko' ? '⚠️ 저장 실패' : '⚠️ Save failed', '#f87171'); };
         if (entry._feed) {
           if (isEdit && !edL._isSleep) {
             var origId = edL.id;
             var origTs = edL.ts || edL.time;
             var origType = edL.type;
             // Fix Z (v54u): timestamp 변경 시 배열 재정렬 (ts desc) — lastBabyFeed 등이 [0] 가정에 의존
-            setFeeds(function(p){var newFd=p.map(function(f){return (origId ? f.id===origId : (f.ts===origTs && f.type===origType)) ? Object.assign({},f,entry) : f;}).sort(function(a,b){return b.ts-a.ts;}); SV('feeds',newFd,onFailLog); return newFd;});
+            setFeeds(function(p){return p.map(function(f){return (origId ? f.id===origId : (f.ts===origTs && f.type===origType)) ? Object.assign({},f,entry) : f;}).sort(function(a,b){return b.ts-a.ts;});});
           } else {
             // Fix Z (v54u): ADD 시에도 sort (sl ADD와 대칭). 과거 시각으로 backfill해도 [0]에 최신 보장
-            setFeeds(function(p){var newFd=[Object.assign({id:uid()},entry)].concat(p).sort(function(a,b){return b.ts-a.ts;}).slice(0,300); SV('feeds',newFd,onFailLog); return newFd;});
+            setFeeds(function(p){return [Object.assign({id:uid()},entry)].concat(p).sort(function(a,b){return b.ts-a.ts;}).slice(0,300);});
           }
         } else if (isEdit && edL._isSleep) {
           var origSlId = edL.id;
           // Fix Z (v54u): sleep edit도 start 변경 시 재정렬
-          setSl(function(p){var newSl=p.map(function(l){return (origSlId ? l.id===origSlId : (l.start===edL.start && l.end===edL.end)) ? Object.assign({},l,entry) : l;}).sort(function(a,b){return b.start-a.start;}); SV('sl',newSl,onFailLog); return newSl;});
+          setSl(function(p){return p.map(function(l){return (origSlId ? l.id===origSlId : (l.start===edL.start && l.end===edL.end)) ? Object.assign({},l,entry) : l;}).sort(function(a,b){return b.start-a.start;});});
         } else {
-          setSl(function(p){var newSl=[Object.assign({id:uid()},entry)].concat(p).sort(function(a,b){return b.start-a.start;}); SV('sl',newSl,onFailLog); return newSl;});
+          setSl(function(p){return [Object.assign({id:uid()},entry)].concat(p).sort(function(a,b){return b.start-a.start;});});
         }
         // lW is now auto-recomputed by HomeScreen's useEffect on sl change
         show(lang === 'ko' ? '✅ 저장됨' : '✅ Saved', '#34d399');
@@ -202,6 +196,9 @@ function MAdd(props) {
   var doSave = function() {
     if (addType === 'sleep') {
       if (endTs <= startTs) return;
+      var sleepEase = ease || (eL && eL.ease) || 'normal';
+      var sleepNightWakes = addNW !== '' ? +addNW : (eL && eL.nightWakes != null ? eL.nightWakes : undefined);
+      var sleepEntry = { start: startTs, end: endTs, ease: sleepEase, nightWakes: sleepNightWakes };
       var durMin = Math.round((endTs - startTs) / 60000);
       var sH = new Date(startTs).getHours();
       var isDay = sH >= 6 && sH < 18;
@@ -214,12 +211,12 @@ function MAdd(props) {
           lang === 'ko' ? '이 낮잠이 ' + durStr + '인데 맞나요? AM/PM을 확인해주세요.' : 'This nap is ' + durStr + '. Is that correct? Please check AM/PM.',
           [
             { text: lang === 'ko' ? '취소' : 'Cancel', style: 'cancel' },
-            { text: lang === 'ko' ? '맞아요' : 'Yes', onPress: function() { onSave({start:startTs,end:endTs,ease:ease||'normal',nightWakes:addNW!==''?+addNW:undefined}); } }
+            { text: lang === 'ko' ? '맞아요' : 'Yes', onPress: function() { onSave(sleepEntry); } }
           ]
         );
         return;
       }
-      onSave({start:startTs,end:endTs,ease:ease||'normal',nightWakes:addNW!==''?+addNW:undefined});
+      onSave(sleepEntry);
     }
     else if (addType === 'breast') { onSave({_feed:true,ts:startTs,type:'모유',side:addSide==='left'?'왼쪽':addSide==='right'?'오른쪽':addSide,dur:addDur?+addDur*60000:null}); }
     else if (addType === 'bottle') { onSave({_feed:true,ts:startTs,type:'분유',ml:+addMl||0}); }
@@ -330,4 +327,3 @@ var s = StyleSheet.create({
   dayAdjText:{color:'rgba(200,215,255,0.5)',fontWeight:'800',fontSize:15},
   mlInput:{backgroundColor:'rgba(255,255,255,0.07)',borderWidth:1.5,borderColor:'rgba(255,255,255,0.13)',borderRadius:14,padding:14,color:'#fff',fontSize:15,fontWeight:'700',marginBottom:8},
 });
-

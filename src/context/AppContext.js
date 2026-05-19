@@ -43,58 +43,66 @@ export function AppProvider(props) {
 
   // Load all data on mount
   useEffect(function() {
-    Promise.all([
-      LD('name', ''),
-      LD('bday', ''),
-      LD('bH', 19),
-      LD('bM2', 30),
-      LD('sl', []),
-      LD('feeds', []),
-      LD('lW', null),
-      LD('onboard', 0),
-      LD('tOn', false),
-      LD('tMe', null),
-      LD('tMeNap', null),
-      LD('tDy', 1),
-      LD('tLg', []),
-      LD('tStartDate', null),
-      LD('savedMethod', null),
-      LD('rdyCh', {}),
-      LD('tDyNap', 1),
-      LD('tStartDateNap', null),
-      LD('asleep', false),
-      LD('sS', null),
-      LD('nob', null),
-      LD('selfSleep', false),
-      LD('reviewed', false),
-    ]).then(function(results) {
-      stName[1](results[0]);
-      stBday[1](results[1]);
-      stBH[1](results[2]);
-      stBM2[1](results[3]);
+    var loadList = [
+      ['name', ''],
+      ['bday', ''],
+      ['bH', 19],
+      ['bM2', 30],
+      ['sl', []],
+      ['feeds', []],
+      ['lW', null],
+      ['onboard', 0],
+      ['tOn', false],
+      ['tMe', null],
+      ['tMeNap', null],
+      ['tDy', 1],
+      ['tLg', []],
+      ['tStartDate', null],
+      ['savedMethod', null],
+      ['rdyCh', {}],
+      ['tDyNap', 1],
+      ['tStartDateNap', null],
+      ['asleep', false],
+      ['sS', null],
+      ['sleepEase', null],
+      ['nob', null],
+      ['selfSleep', false],
+      ['reviewed', false],
+    ];
+    Promise.all(loadList.map(function(pair) {
+      return LD(pair[0], pair[1]);
+    })).then(function(results) {
+      var data = {};
+      for (var i = 0; i < loadList.length; i++) {
+        data[loadList[i][0]] = results[i];
+      }
+      stName[1](data.name);
+      stBday[1](data.bday);
+      stBH[1](data.bH);
+      stBM2[1](data.bM2);
       // Fix CC (v54w): sl/feeds 로드 시 정렬 강제 (구버전 비정렬 데이터 호환)
       // Invariant: sl always sorted by start desc, feeds always sorted by ts desc
-      var loadedSl = Array.isArray(results[4]) ? results[4].slice().sort(function(a,b){return b.start-a.start;}) : [];
-      var loadedFeeds = Array.isArray(results[5]) ? results[5].slice().sort(function(a,b){return b.ts-a.ts;}) : [];
+      var loadedSl = Array.isArray(data.sl) ? data.sl.slice().sort(function(a,b){return b.start-a.start;}) : [];
+      var loadedFeeds = Array.isArray(data.feeds) ? data.feeds.slice().sort(function(a,b){return b.ts-a.ts;}) : [];
       stSl[1](loadedSl);
       stFeeds[1](loadedFeeds);
-      stLW[1](results[6]);
-      var nob = results[20];
-      stOnboard[1](nob === 'done' ? -1 : results[7]);
-      stTOn[1](results[8]);
-      stTMe[1](results[9]);
-      stTMeNap[1](results[10]);
-      stTDy[1](results[11]);
-      stTLg[1](results[12]);
-      stTStartDate[1](results[13]);
-      stSavedMethod[1](results[14]);
-      stRdyCh[1](results[15]);
-      stTDyNap[1](results[16]);
-      stTStartDateNap[1](results[17]);
-      stAsleep[1](results[18]);
-      stSS[1](results[19]);
-      stSelfSleep[1](results[21]);
-      stReviewed[1](results[22]);
+      stLW[1](data.lW);
+      stSleepEase[1](data.sleepEase);
+      stOnboard[1](data.nob === 'done' ? -1 : data.onboard);
+      stTOn[1](data.tOn);
+      stTMe[1](data.tMe);
+      stTMeNap[1](data.tMeNap);
+      stTDy[1](data.tDy);
+      stTLg[1](data.tLg);
+      stTStartDate[1](data.tStartDate);
+      stSavedMethod[1](data.savedMethod);
+      stRdyCh[1](data.rdyCh);
+      stTDyNap[1](data.tDyNap);
+      stTStartDateNap[1](data.tStartDateNap);
+      stAsleep[1](data.asleep);
+      stSS[1](data.sS);
+      stSelfSleep[1](data.selfSleep);
+      stReviewed[1](data.reviewed);
       loadedRef.current = true;
       stLoaded[1](true);
     });
@@ -123,6 +131,7 @@ export function AppProvider(props) {
   useEffect(function() { save('tStartDateNap', stTStartDateNap[0]); }, [stTStartDateNap[0]]);
   useEffect(function() { save('asleep', stAsleep[0]); }, [stAsleep[0]]);
   useEffect(function() { save('sS', stSS[0]); }, [stSS[0]]);
+  useEffect(function() { save('sleepEase', stSleepEase[0]); }, [stSleepEase[0]]);
   useEffect(function() { save('selfSleep', stSelfSleep[0]); }, [stSelfSleep[0]]);
   useEffect(function() { save('reviewed', stReviewed[0]); }, [stReviewed[0]]);
 
@@ -210,4 +219,3 @@ export function useApp() {
   if (!ctx) throw new Error('useApp must be inside AppProvider');
   return ctx;
 }
-
